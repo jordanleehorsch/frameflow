@@ -725,7 +725,7 @@ export default function App() {
               <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-lg shadow-lg shadow-indigo-950">FF</div>
               <div>
                 <div className="font-bold text-base tracking-wide text-white leading-none">FrameFlow</div>
-                <div className="text-[10px] text-slate-400 mt-1">Video Review Hub</div>
+                <div className="text-[10px] text-slate-400 mt-1">Video Studio Pro</div>
               </div>
             </div>
 
