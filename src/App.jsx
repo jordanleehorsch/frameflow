@@ -11,6 +11,7 @@ import {
 // ==========================================
 const BUNNY_STORAGE_ZONE = "thrive";
 const BUNNY_ACCESS_KEY = "d620773b-3709-413d-819288b64563-df1d-4b55";
+const BUNNY_STORAGE_API_URL = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}`;
 const BUNNY_PULL_ZONE_URL = "https://jordanhorsch.b-cdn.net/";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
@@ -98,15 +99,14 @@ export default function App() {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
     
-    // Save locally first
+    // Save locally first for instant responsiveness
     try {
       localStorage.setItem('frameflow_videos', JSON.stringify(vList || videos));
       localStorage.setItem('frameflow_drawings', JSON.stringify(dMap || drawings));
       localStorage.setItem('frameflow_comments', JSON.stringify(cList || comments));
     } catch (e) {}
 
-    // Primary Bunny storage URL endpoint
-    const bunnyUploadUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/frameflow_db.json`;
+    const bunnyUploadUrl = `${BUNNY_STORAGE_API_URL}/frameflow_db.json`;
 
     try {
       const res = await fetch(bunnyUploadUrl, {
@@ -123,7 +123,7 @@ export default function App() {
       });
 
       if (!res.ok) {
-        console.warn(`Bunny CDN DB save status: ${res.status}`);
+        console.warn(`Bunny Storage DB save status: ${res.status}`);
       }
     } catch (err) {
       console.error("Failed to sync database to Bunny CDN:", err);
@@ -137,13 +137,20 @@ export default function App() {
     const fetchAllBunnyCloudAssets = async () => {
       setIsSyncing(true);
       try {
-        // A. Read saved database from Bunny CDN Pull Zone with cache-busting
+        // A. Fetch master database directly from Bunny Storage API
         let cloudDb = { videos: [], drawings: {}, comments: [] };
         try {
-          const dbPublicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/frameflow_db.json?nocache=${Date.now()}`;
-          const res = await fetch(dbPublicUrl);
+          const dbStorageUrl = `${BUNNY_STORAGE_API_URL}/frameflow_db.json?t=${Date.now()}`;
+          const res = await fetch(dbStorageUrl, {
+            headers: { 'AccessKey': BUNNY_ACCESS_KEY }
+          });
           if (res.ok) {
             cloudDb = await res.json();
+          } else {
+            // Fallback to Pull Zone CDN if storage GET is restricted
+            const dbPublicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/frameflow_db.json?nocache=${Date.now()}`;
+            const publicRes = await fetch(dbPublicUrl);
+            if (publicRes.ok) cloudDb = await publicRes.json();
           }
         } catch (e) {
           console.warn("Reading fresh database layout...");
@@ -157,8 +164,8 @@ export default function App() {
           localDb.comments = JSON.parse(localStorage.getItem('frameflow_comments') || '[]');
         } catch (e) {}
 
-        // C. Fetch raw storage files from Bunny Storage API
-        const storageApiUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/`;
+        // C. Fetch raw video files from Bunny Storage API (Los Angeles Endpoint)
+        const storageApiUrl = `${BUNNY_STORAGE_API_URL}/`;
         const storageRes = await fetch(storageApiUrl, {
           method: 'GET',
           headers: {
@@ -356,7 +363,7 @@ export default function App() {
       try {
         const fileName = videoToDelete.url.split('/').pop();
         if (fileName) {
-          const deleteUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${fileName}`;
+          const deleteUrl = `${BUNNY_STORAGE_API_URL}/${fileName}`;
           await fetch(deleteUrl, {
             method: 'DELETE',
             headers: { 'AccessKey': BUNNY_ACCESS_KEY }
@@ -390,7 +397,7 @@ export default function App() {
       setUploadProgress(0);
 
       const cleanFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-      const bunnyUploadUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${cleanFileName}`;
+      const bunnyUploadUrl = `${BUNNY_STORAGE_API_URL}/${cleanFileName}`;
 
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', bunnyUploadUrl, true);
@@ -730,7 +737,7 @@ export default function App() {
               <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-lg shadow-lg shadow-indigo-950">FF</div>
               <div>
                 <div className="font-bold text-base tracking-wide text-white leading-none">FrameFlow</div>
-                <div className="text-[10px] text-slate-400 mt-1">Video Review Hub</div>
+                <div className="text-[10px] text-slate-400 mt-1">Video Studio Pro</div>
               </div>
             </div>
 
