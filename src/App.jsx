@@ -93,14 +93,23 @@ export default function App() {
   // Active Video Object
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // DIRECT CLOUD SAVE FUNCTION (SAFE)
+  // DIRECT CLOUD SAVE FUNCTION
   const saveCloudDatabaseDirect = async (vList, dMap, cList) => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
-    const bunnyUploadUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/frameflow_db.json`;
+    
+    // Save locally first
+    try {
+      localStorage.setItem('frameflow_videos', JSON.stringify(vList || videos));
+      localStorage.setItem('frameflow_drawings', JSON.stringify(dMap || drawings));
+      localStorage.setItem('frameflow_comments', JSON.stringify(cList || comments));
+    } catch (e) {}
+
+    // Primary Bunny storage URL endpoint
+    const bunnyUploadUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/frameflow_db.json`;
 
     try {
-      await fetch(bunnyUploadUrl, {
+      const res = await fetch(bunnyUploadUrl, {
         method: 'PUT',
         headers: {
           'AccessKey': BUNNY_ACCESS_KEY,
@@ -112,6 +121,10 @@ export default function App() {
           comments: cList || comments
         })
       });
+
+      if (!res.ok) {
+        console.warn(`Bunny CDN DB save status: ${res.status}`);
+      }
     } catch (err) {
       console.error("Failed to sync database to Bunny CDN:", err);
     } finally {
@@ -124,7 +137,7 @@ export default function App() {
     const fetchAllBunnyCloudAssets = async () => {
       setIsSyncing(true);
       try {
-        // A. Read saved master database from Bunny CDN Pull Zone (Cache Busting)
+        // A. Read saved database from Bunny CDN Pull Zone with cache-busting
         let cloudDb = { videos: [], drawings: {}, comments: [] };
         try {
           const dbPublicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/frameflow_db.json?nocache=${Date.now()}`;
@@ -136,7 +149,7 @@ export default function App() {
           console.warn("Reading fresh database layout...");
         }
 
-        // B. Read local storage fallback for extra safety
+        // B. Read local storage fallback
         let localDb = { videos: [], drawings: {}, comments: [] };
         try {
           localDb.videos = JSON.parse(localStorage.getItem('frameflow_videos') || '[]');
@@ -145,7 +158,7 @@ export default function App() {
         } catch (e) {}
 
         // C. Fetch raw storage files from Bunny Storage API
-        const storageApiUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/`;
+        const storageApiUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/`;
         const storageRes = await fetch(storageApiUrl, {
           method: 'GET',
           headers: {
@@ -179,7 +192,7 @@ export default function App() {
           }
         });
 
-        // E. Normalize Comments (Match deterministic IDs)
+        // E. Normalize Comments
         const allComments = [...(cloudDb.comments || []), ...(localDb.comments || [])];
         const commentMap = new Map();
         allComments.forEach(c => {
@@ -238,7 +251,6 @@ export default function App() {
       } finally {
         setIsDbLoaded(true);
         setIsSyncing(false);
-        // UNLOCK SHIELD: App is fully loaded, safe to save future updates
         setTimeout(() => {
           isInitialLoadRef.current = false;
         }, 500);
@@ -248,15 +260,9 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. AUTO-SAVE ON STATE CHANGE (SAFEGUARDED FROM RACES)
+  // 2. AUTO-SAVE ON STATE CHANGE
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
-
-    try {
-      localStorage.setItem('frameflow_videos', JSON.stringify(videos));
-      localStorage.setItem('frameflow_drawings', JSON.stringify(drawings));
-      localStorage.setItem('frameflow_comments', JSON.stringify(comments));
-    } catch (e) {}
 
     const debounceSync = setTimeout(() => {
       saveCloudDatabaseDirect(videos, drawings, comments);
@@ -350,7 +356,7 @@ export default function App() {
       try {
         const fileName = videoToDelete.url.split('/').pop();
         if (fileName) {
-          const deleteUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${fileName}`;
+          const deleteUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${fileName}`;
           await fetch(deleteUrl, {
             method: 'DELETE',
             headers: { 'AccessKey': BUNNY_ACCESS_KEY }
@@ -384,7 +390,7 @@ export default function App() {
       setUploadProgress(0);
 
       const cleanFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-      const bunnyUploadUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${cleanFileName}`;
+      const bunnyUploadUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${cleanFileName}`;
 
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', bunnyUploadUrl, true);
@@ -477,7 +483,7 @@ export default function App() {
     renderCanvas();
   };
 
-  // Stop Drawing with Deduplicated Comment Logic
+  // Stop Drawing
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
@@ -703,7 +709,6 @@ export default function App() {
     }, 800);
   };
 
-  // Active comments filter (Matched strictly against activeVideo.id)
   const targetVidId = activeVideo?.id || activeVideoId;
   const activeComments = comments.filter(c => c.videoId === targetVidId);
 
@@ -725,7 +730,7 @@ export default function App() {
               <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-lg shadow-lg shadow-indigo-950">FF</div>
               <div>
                 <div className="font-bold text-base tracking-wide text-white leading-none">FrameFlow</div>
-                <div className="text-[10px] text-slate-400 mt-1">Video Studio Pro</div>
+                <div className="text-[10px] text-slate-400 mt-1">Video Review Hub</div>
               </div>
             </div>
 
