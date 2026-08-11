@@ -103,7 +103,7 @@ export default function App() {
   // Active Video Object
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // DIRECT CLOUD SAVE FUNCTION
+  // DIRECT CLOUD SAVE FUNCTION (Syncs directly to Bunny CDN)
   const saveCloudDatabaseDirect = async (vList, dMap, cList) => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
@@ -203,8 +203,8 @@ export default function App() {
           }
         });
 
-        // Merge Comments (Preserve local + cloud seamlessly)
-        const allComments = [...(localDb.comments || []), ...(cloudDb.comments || [])];
+        // Merge Comments (Preserve local + cloud seamlessly across devices)
+        const allComments = [...(cloudDb.comments || []), ...(localDb.comments || [])];
         const commentMap = new Map();
         allComments.forEach(c => {
           if (c && c.id) {
@@ -474,8 +474,10 @@ export default function App() {
     };
   };
 
+  // Touch & Mouse Start - Prevents Mobile Screen Dragging
   const startDrawing = (e) => {
     if (!isDrawingMode) return;
+    if (e.cancelable) e.preventDefault();
     setIsMouseDown(true);
     if (isPlaying) {
       videoRef.current?.pause();
@@ -485,8 +487,10 @@ export default function App() {
     setCurrentPath([coords]);
   };
 
+  // Touch & Mouse Drag - Locks Canvas to Screen
   const draw = (e) => {
     if (!isDrawingMode || !isMouseDown) return;
+    if (e.cancelable) e.preventDefault();
     const coords = getCanvasCoordinates(e);
     setCurrentPath(prev => [...prev, coords]);
     renderCanvas();
@@ -577,7 +581,7 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
-  // Comment Handlers (Saves instantly to LocalStorage + Cloud)
+  // Comment Handlers (Saves instantly to LocalStorage + Cloud Sync)
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -602,7 +606,6 @@ export default function App() {
     const updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status: 'Changes Requested' } : v);
     setVideos(updatedVideos);
 
-    // Save locally immediately
     try {
       localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
       localStorage.setItem('frameflow_videos', JSON.stringify(updatedVideos));
@@ -1080,11 +1083,12 @@ export default function App() {
                   }}
                 />
 
-                {/* Drawing Canvas Overlay */}
+                {/* Drawing Canvas Overlay with Touch Action Disabled for Clean Mobile Drawing */}
                 <canvas
                   ref={canvasRef}
                   width={1280}
                   height={720}
+                  style={{ touchAction: 'none' }}
                   onMouseDown={startDrawing}
                   onMouseMove={draw}
                   onMouseUp={stopDrawing}
@@ -1196,7 +1200,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* COMMENTS SIDEBAR / BOTTOM PANEL */}
+          {/* COMMENTS PANEL (Feedback input positioned FIRST, comments rendered BELOW) */}
           <div className="w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col flex-shrink-0 min-h-[300px] lg:min-h-0">
             <div className="p-3 border-b border-slate-800 flex items-center justify-between">
               <h2 className="font-bold text-white text-xs flex items-center gap-2 uppercase tracking-wider">
@@ -1204,6 +1208,33 @@ export default function App() {
               </h2>
             </div>
 
+            {/* INPUT FORM POSITIONED AT TOP */}
+            <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
+              <input 
+                type="text" 
+                placeholder="Your Name"
+                value={authorName}
+                onChange={(e) => setAuthorName(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+              />
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  placeholder="Add feedback at frame..."
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  className="flex-1 bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                />
+                <button 
+                  type="submit"
+                  className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
+                >
+                  <Send size={14} />
+                </button>
+              </div>
+            </form>
+
+            {/* COMMENTS LIST POSITIONED BELOW INPUT FORM */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[350px] lg:max-h-none">
               {activeComments.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs">
@@ -1241,31 +1272,6 @@ export default function App() {
                 ))
               )}
             </div>
-
-            <form onSubmit={handleAddComment} className="p-3 border-t border-slate-800 space-y-2 bg-slate-900">
-              <input 
-                type="text" 
-                placeholder="Your Name"
-                value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
-              />
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  placeholder="Add feedback at frame..."
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  className="flex-1 bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-                <button 
-                  type="submit"
-                  className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
-                >
-                  <Send size={14} />
-                </button>
-              </div>
-            </form>
           </div>
 
         </div>
