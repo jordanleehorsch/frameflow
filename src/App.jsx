@@ -18,12 +18,12 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v1.9",
-  title: "Real-Time Cross-Device Comment Deletion",
-  description: "Deleting comments or undoing drawing markups on mobile now instantly removes them from desktop screens in real time!"
+  version: "v2.0",
+  title: "Multi-Reviewer Isolation & Persistent Device Names",
+  description: "Reviewer names now save per-device automatically! Comments at the same timestamp from different reviewers will no longer overwrite each other."
 };
 
-// Safe Deterministic ID Generator: Prevents double-prefixing IDs on sync
+// Safe Deterministic ID Generator
 const getDeterministicId = (filenameOrUrl) => {
   if (!filenameOrUrl) return '';
   const str = String(filenameOrUrl);
@@ -49,7 +49,6 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoadRef = useRef(true);
 
-  // Update Notification Banner Visibility
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
 
   const [brands] = useState(INITIAL_BRANDS);
@@ -67,7 +66,6 @@ export default function App() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
 
-  // Drawing State (Default stroke width 8px for mobile visibility)
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#EF4444');
   const [strokeWidth, setStrokeWidth] = useState(8);
@@ -85,9 +83,22 @@ export default function App() {
     } catch(e) { return []; }
   });
   const [commentFilter, setCommentFilter] = useState('unresolved');
-  const [commentSort, setCommentSort] = useState('timestamp'); // Default sort: Timecode
+  const [commentSort, setCommentSort] = useState('timestamp');
   const [commentText, setCommentText] = useState('');
-  const [authorName, setAuthorName] = useState('Reviewer');
+
+  // 💾 DEVICE-SPECIFIC REVIEWER NAME (Persisted in localStorage)
+  const [authorName, setAuthorName] = useState(() => {
+    try {
+      return localStorage.getItem('frameflow_author_name') || 'Reviewer';
+    } catch(e) { return 'Reviewer'; }
+  });
+
+  const handleAuthorNameChange = (newName) => {
+    setAuthorName(newName);
+    try {
+      localStorage.setItem('frameflow_author_name', newName);
+    } catch(e) {}
+  };
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
@@ -108,7 +119,7 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // DIRECT CLOUD SAVE FUNCTION (Calls Vercel API Relay)
+  // DIRECT CLOUD SAVE FUNCTION
   const saveCloudDatabaseDirect = async (vList, dMap, cList) => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
@@ -260,7 +271,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Reflects Deletions Immediately)
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -272,7 +283,6 @@ export default function App() {
         if (res.ok) {
           const cloudDb = await res.json();
 
-          // Direct Match Sync for Comments (Accurately syncs deleted comments across devices)
           if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
             const normalizedCloudComments = cloudDb.comments.map(c => ({
               ...c,
@@ -287,7 +297,6 @@ export default function App() {
             });
           }
 
-          // Direct Match Sync for Drawings (Accurately syncs undos across devices)
           if (cloudDb.drawings) {
             setDrawings(prevDrawings => {
               const normalizedDrawings = {};
@@ -302,7 +311,6 @@ export default function App() {
             });
           }
 
-          // Sync Video Titles, Brands, Statuses
           if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
             setVideos(prevVideos => {
               const vidMap = new Map();
@@ -601,6 +609,7 @@ export default function App() {
     renderCanvas();
   };
 
+  // Stop Drawing: Only merges drawing flag if it's the SAME author at that timestamp
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
@@ -627,13 +636,15 @@ export default function App() {
       setDrawings(nextDrawings);
 
       let nextComments = [...comments];
-      const existingCommentIndex = nextComments.findIndex(
-        c => c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey
+      const existingSameAuthorIndex = nextComments.findIndex(
+        c => c.videoId === targetVidId && 
+             c.timestamp.toFixed(1) === timeKey && 
+             c.author === authorName
       );
 
-      if (existingCommentIndex !== -1) {
-        nextComments[existingCommentIndex] = {
-          ...nextComments[existingCommentIndex],
+      if (existingSameAuthorIndex !== -1) {
+        nextComments[existingSameAuthorIndex] = {
+          ...nextComments[existingSameAuthorIndex],
           hasDrawing: true
         };
       } else {
@@ -683,11 +694,11 @@ export default function App() {
     let nextComments = comments;
     if (updatedFrameDrawings.length === 0) {
       nextComments = comments.map(c => {
-        if (c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey) {
+        if (c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.author === authorName) {
           return { ...c, hasDrawing: false };
         }
         return c;
-      }).filter(c => !(c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.text === 'Canvas markup / drawing annotation added'));
+      }).filter(c => !(c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.author === authorName && c.text === 'Canvas markup / drawing annotation added'));
     }
 
     setDrawings(nextDrawings);
@@ -724,6 +735,7 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
+  // Comment Handlers: Only replaces placeholder or merges if it matches the SAME reviewer author name
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -733,9 +745,12 @@ export default function App() {
     const hasDrawingAtFrame = (drawings[targetVidId]?.[timeKey] || []).length > 0;
 
     let nextComments = [...comments];
+
+    // Check placeholder created by THIS SAME author
     const placeholderIndex = nextComments.findIndex(
       c => c.videoId === targetVidId &&
            c.timestamp.toFixed(1) === timeKey &&
+           c.author === authorName &&
            c.text === 'Canvas markup / drawing annotation added'
     );
 
@@ -747,18 +762,20 @@ export default function App() {
         hasDrawing: true
       };
     } else {
-      const existingFrameCommentIndex = nextComments.findIndex(
-        c => c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey
+      // Check if a comment by THIS SAME author exists at this frame
+      const existingAuthorCommentIndex = nextComments.findIndex(
+        c => c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.author === authorName
       );
 
-      if (existingFrameCommentIndex !== -1) {
-        nextComments[existingFrameCommentIndex] = {
-          ...nextComments[existingFrameCommentIndex],
+      if (existingAuthorCommentIndex !== -1) {
+        nextComments[existingAuthorCommentIndex] = {
+          ...nextComments[existingAuthorCommentIndex],
           author: authorName,
           text: commentText.trim(),
-          hasDrawing: nextComments[existingFrameCommentIndex].hasDrawing || hasDrawingAtFrame
+          hasDrawing: nextComments[existingAuthorCommentIndex].hasDrawing || hasDrawingAtFrame
         };
       } else {
+        // Different author or new keyframe -> Always create a new comment card!
         const newComment = {
           id: 'c-' + Date.now(),
           videoId: targetVidId,
@@ -1350,7 +1367,6 @@ export default function App() {
                   }`}
                 />
 
-                {/* DRAWING TOOLBAR OVERLAY WITH UNDO & STROKE SIZE SELECTOR */}
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1.5 rounded-lg shadow-lg z-20">
                   <button
                     onClick={() => setIsDrawingMode(!isDrawingMode)}
@@ -1366,7 +1382,6 @@ export default function App() {
                     <>
                       <div className="h-3 w-px bg-slate-700 mx-0.5" />
 
-                      {/* ↩️ UNDO STROKE BUTTON */}
                       <button
                         onClick={handleUndoDrawing}
                         className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition"
@@ -1377,7 +1392,6 @@ export default function App() {
 
                       <div className="h-3 w-px bg-slate-700 mx-0.5" />
 
-                      {/* ✏️ STROKE SIZE SELECTOR (S / M / L) */}
                       {[4, 8, 14].map(w => (
                         <button
                           key={w}
@@ -1526,13 +1540,13 @@ export default function App() {
               </div>
             </div>
 
-            {/* INPUT FORM (16px Font on Mobile Prevents Auto-Zoom) */}
+            {/* INPUT FORM (Reviewer Name Saves Automatically per Device) */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
                 placeholder="Your Name"
                 value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
+                onChange={(e) => handleAuthorNameChange(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 text-[16px] md:text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
               />
               <div className="flex gap-2">
