@@ -11,12 +11,11 @@ import {
 // ==========================================
 const BUNNY_STORAGE_ZONE = "thrive";
 const BUNNY_ACCESS_KEY = "d620773b-3709-413d-819288b64563-df1d-4b55";
-const BUNNY_STORAGE_API_URL = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}`;
 const BUNNY_PULL_ZONE_URL = "https://jordanhorsch.b-cdn.net/";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
-// Immutable Deterministic ID Generator: Strips extensions & special chars
+// Immutable Deterministic ID Generator
 const getDeterministicId = (filenameOrUrl) => {
   if (!filenameOrUrl) return '';
   const filename = filenameOrUrl.split('/').pop().split('?')[0];
@@ -25,41 +24,34 @@ const getDeterministicId = (filenameOrUrl) => {
 };
 
 export default function App() {
-  // Capture deep-link parameter immediately at component mount
   const initialVideoParamRef = useRef(
     new URLSearchParams(window.location.search).get('v') || 
     new URLSearchParams(window.location.search).get('video')
   );
 
-  // Navigation State ('dashboard' or 'review')
   const [currentView, setCurrentView] = useState(() => {
     return initialVideoParamRef.current ? 'review' : 'dashboard';
   });
   
-  // Cloud Database Sync State
   const [isDbLoaded, setIsDbLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoadRef = useRef(true);
 
-  // Brand & Video State
   const [brands] = useState(INITIAL_BRANDS);
   const [selectedBrand, setSelectedBrand] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [videos, setVideos] = useState([]);
   const [activeVideoId, setActiveVideoId] = useState('');
 
-  // Editing Title State
   const [editingTitleId, setEditingTitleId] = useState(null);
   const [tempTitleText, setTempTitleText] = useState('');
 
-  // Player State
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
 
-  // Drawing State
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#EF4444');
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -71,7 +63,6 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState([]);
   const [isMouseDown, setIsMouseDown] = useState(false);
 
-  // Comments State & Active Filter ('unresolved', 'resolved', 'all')
   const [comments, setComments] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('frameflow_comments') || '[]');
@@ -81,14 +72,12 @@ export default function App() {
   const [commentText, setCommentText] = useState('');
   const [authorName, setAuthorName] = useState('Reviewer');
 
-  // Modals & AI State
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiOutput, setAiOutput] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // Upload Form Inputs & CDN Progress State
   const [newVideoTitle, setNewVideoTitle] = useState('');
   const [newVideoBrand, setNewVideoBrand] = useState('Thrive');
   const [newVideoUrl, setNewVideoUrl] = useState('');
@@ -97,14 +86,12 @@ export default function App() {
   const [isUploadingToCdn, setIsUploadingToCdn] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // Refs
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // Active Video Object
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // DIRECT CLOUD SAVE FUNCTION (Syncs directly to Bunny Storage API)
+  // DIRECT CLOUD SAVE FUNCTION (Calls Vercel API Relay)
   const saveCloudDatabaseDirect = async (vList, dMap, cList) => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
@@ -119,15 +106,10 @@ export default function App() {
       localStorage.setItem('frameflow_comments', JSON.stringify(targetComments));
     } catch (e) {}
 
-    const bunnyUploadUrl = `${BUNNY_STORAGE_API_URL}/frameflow_db.json`;
-
     try {
-      await fetch(bunnyUploadUrl, {
+      await fetch('/api/db', {
         method: 'PUT',
-        headers: {
-          'AccessKey': BUNNY_ACCESS_KEY,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videos: targetVideos,
           drawings: targetDrawings,
@@ -135,23 +117,20 @@ export default function App() {
         })
       });
     } catch (err) {
-      console.error("Failed to sync database to Bunny CDN:", err);
+      console.error("Failed to sync database:", err);
     } finally {
       setTimeout(() => setIsSyncing(false), 300);
     }
   };
 
-  // 1. INITIAL LOAD FROM BUNNY CDN ON APP START
+  // 1. INITIAL LOAD FROM VERCEL API RELAY
   useEffect(() => {
     const fetchAllBunnyCloudAssets = async () => {
       setIsSyncing(true);
       try {
         let cloudDb = { videos: [], drawings: {}, comments: [] };
         try {
-          const dbStorageUrl = `${BUNNY_STORAGE_API_URL}/frameflow_db.json?t=${Date.now()}`;
-          const res = await fetch(dbStorageUrl, {
-            headers: { 'AccessKey': BUNNY_ACCESS_KEY }
-          });
+          const res = await fetch('/api/db');
           if (res.ok) {
             cloudDb = await res.json();
           }
@@ -166,7 +145,7 @@ export default function App() {
           localDb.comments = JSON.parse(localStorage.getItem('frameflow_comments') || '[]');
         } catch (e) {}
 
-        const storageApiUrl = `${BUNNY_STORAGE_API_URL}/`;
+        const storageApiUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/`;
         const storageRes = await fetch(storageApiUrl, {
           method: 'GET',
           headers: {
@@ -199,7 +178,6 @@ export default function App() {
           }
         });
 
-        // Merge Comments across devices
         const allComments = [...(cloudDb.comments || []), ...(localDb.comments || [])];
         const commentMap = new Map();
         allComments.forEach(c => {
@@ -252,7 +230,7 @@ export default function App() {
           setActiveVideoId(mergedVideoList[0].id);
         }
       } catch (err) {
-        console.error("Error fetching assets from Bunny CDN:", err);
+        console.error("Error fetching assets:", err);
       } finally {
         setIsDbLoaded(true);
         setIsSyncing(false);
@@ -265,24 +243,18 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ REAL-TIME CLOUD POLLING ENGINE (Heartbeat every 3 seconds for instant multi-device sync)
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
   useEffect(() => {
     if (!isDbLoaded) return;
 
     const liveSyncInterval = setInterval(async () => {
-      // Don't poll while actively sending a local update to prevent state overwrites
       if (isSyncing) return;
 
       try {
-        const dbStorageUrl = `${BUNNY_STORAGE_API_URL}/frameflow_db.json?t=${Date.now()}`;
-        const res = await fetch(dbStorageUrl, {
-          headers: { 'AccessKey': BUNNY_ACCESS_KEY }
-        });
-
+        const res = await fetch('/api/db');
         if (res.ok) {
           const cloudDb = await res.json();
 
-          // Sync Comments in Real Time
           if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
             setComments(prevComments => {
               const commentMap = new Map();
@@ -301,7 +273,6 @@ export default function App() {
             });
           }
 
-          // Sync Drawings in Real Time
           if (cloudDb.drawings) {
             setDrawings(prevDrawings => {
               const merged = { ...prevDrawings };
@@ -318,32 +289,14 @@ export default function App() {
               return prevDrawings;
             });
           }
-
-          // Sync Video Folders / Status in Real Time
-          if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
-            setVideos(prevVideos => {
-              let changed = false;
-              const updated = prevVideos.map(v => {
-                const cloudVid = cloudDb.videos.find(cv => getDeterministicId(cv.id || cv.url) === v.id);
-                if (cloudVid && (cloudVid.brand !== v.brand || cloudVid.status !== v.status || cloudVid.title !== v.title)) {
-                  changed = true;
-                  return { ...v, brand: cloudVid.brand || v.brand, status: cloudVid.status || v.status, title: cloudVid.title || v.title };
-                }
-                return v;
-              });
-              return changed ? updated : prevVideos;
-            });
-          }
         }
-      } catch (e) {
-        // Silent catch for background network drops
-      }
-    }, 3000); // 3-second live pulse
+      } catch (e) {}
+    }, 3000);
 
     return () => clearInterval(liveSyncInterval);
   }, [isDbLoaded, isSyncing]);
 
-  // 3. AUTO-SAVE ON LOCAL STATE CHANGES
+  // 3. AUTO-SAVE ON STATE CHANGE
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
 
@@ -371,7 +324,7 @@ export default function App() {
     }
   }, [videos, isDbLoaded]);
 
-  // 5. KEEP URL IN SYNC WITH CURRENT VIEW & VIDEO
+  // 5. KEEP URL IN SYNC
   useEffect(() => {
     if (currentView === 'review' && activeVideoId) {
       const newUrl = `${window.location.pathname}?v=${encodeURIComponent(activeVideoId)}`;
@@ -382,7 +335,6 @@ export default function App() {
     }
   }, [currentView, activeVideoId]);
 
-  // Move / Change Video Brand Folder Handler
   const handleUpdateBrand = (videoId, newBrand, e) => {
     if (e) e.stopPropagation();
     const updatedVideos = videos.map(v => v.id === videoId ? { ...v, brand: newBrand } : v);
@@ -390,14 +342,12 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
-  // Start Editing Title
   const startRenameVideo = (videoId, currentTitle, e) => {
     if (e) e.stopPropagation();
     setEditingTitleId(videoId);
     setTempTitleText(currentTitle);
   };
 
-  // Save Renamed Video Title
   const saveRenameVideo = (videoId, e) => {
     if (e) e.stopPropagation();
     if (tempTitleText.trim()) {
@@ -408,7 +358,6 @@ export default function App() {
     setEditingTitleId(null);
   };
 
-  // Copy Direct Share Link Function
   const handleCopyLink = (videoIdToCopy, e) => {
     if (e) e.stopPropagation();
     const targetId = videoIdToCopy || activeVideoId;
@@ -427,7 +376,6 @@ export default function App() {
     }
   };
 
-  // Delete Video File Function
   const handleDeleteVideo = async (videoIdToDelete, e) => {
     if (e) e.stopPropagation();
     const videoToDelete = videos.find(v => v.id === videoIdToDelete);
@@ -439,14 +387,14 @@ export default function App() {
       try {
         const fileName = videoToDelete.url.split('/').pop();
         if (fileName) {
-          const deleteUrl = `${BUNNY_STORAGE_API_URL}/${fileName}`;
+          const deleteUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${fileName}`;
           await fetch(deleteUrl, {
             method: 'DELETE',
             headers: { 'AccessKey': BUNNY_ACCESS_KEY }
           });
         }
       } catch (err) {
-        console.error("Error deleting file from Bunny CDN:", err);
+        console.error("Error deleting file:", err);
       }
 
       const updatedVideos = videos.filter(v => v.id !== videoIdToDelete);
@@ -466,14 +414,13 @@ export default function App() {
     }
   };
 
-  // Direct Bunny.net Video Upload with Real-Time Progress Tracker
   const uploadFileToBunnyCDN = (file) => {
     return new Promise((resolve) => {
       setIsUploadingToCdn(true);
       setUploadProgress(0);
 
       const cleanFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-      const bunnyUploadUrl = `${BUNNY_STORAGE_API_URL}/${cleanFileName}`;
+      const bunnyUploadUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${cleanFileName}`;
 
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', bunnyUploadUrl, true);
@@ -493,16 +440,14 @@ export default function App() {
           const publicCdnUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/${cleanFileName}`;
           resolve({ url: publicCdnUrl, fileName: cleanFileName });
         } else {
-          console.error("Upload failed with status", xhr.status);
-          alert(`⚠️ Cloud upload failed with status ${xhr.status}. Check credentials or CORS.`);
+          alert(`⚠️ Upload failed with status ${xhr.status}.`);
           resolve(null);
         }
       };
 
       xhr.onerror = () => {
         setIsUploadingToCdn(false);
-        console.error("Network error during Bunny CDN upload");
-        alert("⚠️ Cloud upload to Bunny CDN failed. Check network or CORS permissions.");
+        alert("⚠️ Cloud upload to Bunny CDN failed.");
         resolve(null);
       };
 
@@ -510,7 +455,6 @@ export default function App() {
     });
   };
 
-  // Video Time & Status Handlers
   const formatTime = (seconds) => {
     if (isNaN(seconds)) return '00:00.0';
     const mins = Math.floor(seconds / 60);
@@ -535,7 +479,6 @@ export default function App() {
     setCurrentView('review');
   };
 
-  // Canvas Drawing Coordinate Math
   const getCanvasCoordinates = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -548,7 +491,6 @@ export default function App() {
     };
   };
 
-  // Touch & Mouse Start - Prevents Mobile Screen Dragging
   const startDrawing = (e) => {
     if (!isDrawingMode) return;
     if (e.cancelable) e.preventDefault();
@@ -561,7 +503,6 @@ export default function App() {
     setCurrentPath([coords]);
   };
 
-  // Touch & Mouse Drag - Locks Canvas to Screen
   const draw = (e) => {
     if (!isDrawingMode || !isMouseDown) return;
     if (e.cancelable) e.preventDefault();
@@ -570,7 +511,6 @@ export default function App() {
     renderCanvas();
   };
 
-  // Stop Drawing
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
@@ -655,7 +595,6 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
-  // Comment Handlers (Syncs instantly across devices)
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -697,7 +636,6 @@ export default function App() {
     saveCloudDatabaseDirect(videos, drawings, updatedComments);
   };
 
-  // Upload Handlers
   const handleFileSelect = async (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -807,11 +745,10 @@ export default function App() {
   const targetVidId = activeVideo?.id || activeVideoId;
   const allVideoComments = comments.filter(c => c.videoId === targetVidId);
 
-  // Filter comments based on active tab selection
   const filteredComments = allVideoComments.filter(c => {
     if (commentFilter === 'unresolved') return !c.completed;
     if (commentFilter === 'resolved') return c.completed;
-    return true; // 'all'
+    return true;
   });
 
   const filteredVideos = videos.filter(v => {
@@ -823,10 +760,9 @@ export default function App() {
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
-      {/* GLOBAL SIDEBAR (Responsive) */}
+      {/* GLOBAL SIDEBAR */}
       <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
-          {/* Logo Header */}
           <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-base md:text-lg shadow-lg shadow-indigo-950">FF</div>
@@ -836,8 +772,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Cloud Sync Indicator */}
-            <div className="text-slate-500" title={isSyncing ? "Syncing with Bunny Cloud..." : "Live Cloud Sync Active"}>
+            <div className="text-slate-500" title={isSyncing ? "Syncing..." : "Live Relay Active"}>
               {isSyncing ? (
                 <Loader2 size={14} className="animate-spin text-indigo-400" />
               ) : (
@@ -846,7 +781,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Nav Items */}
           <div className="p-2 md:p-3 flex md:flex-col gap-1">
             <button 
               onClick={() => setCurrentView('dashboard')}
@@ -878,7 +812,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Brand Workspace Filters */}
           <div className="hidden md:block px-4 py-3 border-t border-slate-800/80">
             <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 block">Brand Workspace</label>
             <select 
@@ -892,7 +825,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Bottom Upload Button */}
         <div className="hidden md:block p-3 border-t border-slate-800">
           <button 
             onClick={() => setIsUploadOpen(true)}
@@ -903,13 +835,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* ========================================================= */}
-      {/* VIEW 1: DASHBOARD HUB                                     */}
-      {/* ========================================================= */}
+      {/* VIEW 1: DASHBOARD HUB */}
       {currentView === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950">
-          
-          {/* Top Search Bar */}
           <div className="h-16 border-b border-slate-800 px-4 md:px-8 flex items-center justify-between bg-slate-900/40 sticky top-0 backdrop-blur z-20 gap-4">
             <div className="relative flex-1 max-w-md">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -931,8 +859,6 @@ export default function App() {
           </div>
 
           <div className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
-            
-            {/* Recents Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold text-slate-200 tracking-wide">Recents</h2>
@@ -1042,19 +968,15 @@ export default function App() {
                 </div>
               )}
             </div>
-
           </div>
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* VIEW 2: FRAMEFLOW VIDEO REVIEW PLAYER STUDIO              */}
-      {/* ========================================================= */}
+      {/* VIEW 2: FRAMEFLOW VIDEO REVIEW PLAYER STUDIO */}
       {currentView === 'review' && activeVideo && (
         <div className="flex-1 flex flex-col lg:flex-row bg-slate-950 min-w-0 overflow-y-auto lg:overflow-hidden">
           
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Responsive Top Controls Header */}
             <div className="p-3 lg:px-6 lg:py-3 border-b border-slate-800 bg-slate-900/50 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <button 
@@ -1083,7 +1005,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Action Buttons Wrap */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700 text-[10px]">
                   {['In Review', 'Changes Requested', 'Approved'].map((status) => (
@@ -1143,10 +1064,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Video Canvas Container */}
             <div className="flex-1 flex flex-col justify-center items-center p-3 md:p-6 bg-slate-950 relative overflow-hidden min-h-[50vh]">
               <div className="relative max-h-[60vh] lg:max-h-[70vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
-                
                 <video
                   ref={videoRef}
                   src={activeVideo?.url}
@@ -1164,7 +1083,6 @@ export default function App() {
                   }}
                 />
 
-                {/* Drawing Canvas Overlay */}
                 <canvas
                   ref={canvasRef}
                   width={1280}
@@ -1181,7 +1099,6 @@ export default function App() {
                   }`}
                 />
 
-                {/* Drawing Toolbar Overlay */}
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1 rounded-lg shadow-lg z-20">
                   <button
                     onClick={() => setIsDrawingMode(!isDrawingMode)}
@@ -1211,7 +1128,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Custom Video Timeline Controls & Pinpoints */}
               <div className="w-full max-w-5xl mt-3 bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
                 <div className="relative w-full h-3 bg-slate-800 rounded-lg cursor-pointer flex items-center">
                   <input
@@ -1281,7 +1197,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* COMMENTS PANEL WITH RETENTION TABS & TOP TYPE-IN BAR */}
           <div className="w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col flex-shrink-0 min-h-[300px] lg:min-h-0">
             <div className="p-3 border-b border-slate-800 flex flex-col gap-2">
               <div className="flex items-center justify-between">
@@ -1290,7 +1205,6 @@ export default function App() {
                 </h2>
               </div>
 
-              {/* Resolved / Unresolved Filter Tabs */}
               <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px] font-medium">
                 <button
                   onClick={() => setCommentFilter('unresolved')}
@@ -1319,7 +1233,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* INPUT FORM (POSITIONED AT TOP) */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
@@ -1345,7 +1258,6 @@ export default function App() {
               </div>
             </form>
 
-            {/* COMMENTS LIST (POSITIONED BELOW INPUT FORM) */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[350px] lg:max-h-none">
               {filteredComments.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs">
