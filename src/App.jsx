@@ -16,11 +16,12 @@ const BUNNY_PULL_ZONE_URL = "https://jordanhorsch.b-cdn.net/";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
-// Deterministic ID Generator: Locks videos, comments, and drawings to the exact Bunny CDN filename
+// Immutable Deterministic ID Generator: Strips extensions & special chars
 const getDeterministicId = (filenameOrUrl) => {
   if (!filenameOrUrl) return '';
   const filename = filenameOrUrl.split('/').pop().split('?')[0];
-  return 'vid-' + decodeURIComponent(filename).toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+  return 'vid-' + decodeURIComponent(nameWithoutExt).toLowerCase().replace(/[^a-z0-9]/g, '_');
 };
 
 export default function App() {
@@ -62,12 +63,20 @@ export default function App() {
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#EF4444');
   const [strokeWidth, setStrokeWidth] = useState(4);
-  const [drawings, setDrawings] = useState({});
+  const [drawings, setDrawings] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('frameflow_drawings') || '{}');
+    } catch(e) { return {}; }
+  });
   const [currentPath, setCurrentPath] = useState([]);
   const [isMouseDown, setIsMouseDown] = useState(false);
 
-  // Comments State
-  const [comments, setComments] = useState([]);
+  // Comments State (Prefill from localStorage instantly)
+  const [comments, setComments] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('frameflow_comments') || '[]');
+    } catch(e) { return []; }
+  });
   const [commentText, setCommentText] = useState('');
   const [authorName, setAuthorName] = useState('Reviewer');
 
@@ -99,32 +108,32 @@ export default function App() {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
     
-    // Save locally first for instant responsiveness
+    const targetVideos = vList || videos;
+    const targetDrawings = dMap || drawings;
+    const targetComments = cList || comments;
+
+    // Local Storage Backup First
     try {
-      localStorage.setItem('frameflow_videos', JSON.stringify(vList || videos));
-      localStorage.setItem('frameflow_drawings', JSON.stringify(dMap || drawings));
-      localStorage.setItem('frameflow_comments', JSON.stringify(cList || comments));
+      localStorage.setItem('frameflow_videos', JSON.stringify(targetVideos));
+      localStorage.setItem('frameflow_drawings', JSON.stringify(targetDrawings));
+      localStorage.setItem('frameflow_comments', JSON.stringify(targetComments));
     } catch (e) {}
 
     const bunnyUploadUrl = `${BUNNY_STORAGE_API_URL}/frameflow_db.json`;
 
     try {
-      const res = await fetch(bunnyUploadUrl, {
+      await fetch(bunnyUploadUrl, {
         method: 'PUT',
         headers: {
           'AccessKey': BUNNY_ACCESS_KEY,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          videos: vList || videos,
-          drawings: dMap || drawings,
-          comments: cList || comments
+          videos: targetVideos,
+          drawings: targetDrawings,
+          comments: targetComments
         })
       });
-
-      if (!res.ok) {
-        console.warn(`Bunny Storage DB save status: ${res.status}`);
-      }
     } catch (err) {
       console.error("Failed to sync database to Bunny CDN:", err);
     } finally {
@@ -132,12 +141,11 @@ export default function App() {
     }
   };
 
-  // 1. SCAN BUNNY CDN STORAGE DIRECTLY & FETCH REAL-TIME DATABASE ON LAUNCH
+  // 1. SCAN BUNNY CDN STORAGE DIRECTLY & MERGE DATABASE ON LAUNCH
   useEffect(() => {
     const fetchAllBunnyCloudAssets = async () => {
       setIsSyncing(true);
       try {
-        // A. Fetch master database directly from Bunny Storage API
         let cloudDb = { videos: [], drawings: {}, comments: [] };
         try {
           const dbStorageUrl = `${BUNNY_STORAGE_API_URL}/frameflow_db.json?t=${Date.now()}`;
@@ -147,7 +155,6 @@ export default function App() {
           if (res.ok) {
             cloudDb = await res.json();
           } else {
-            // Fallback to Pull Zone CDN if storage GET is restricted
             const dbPublicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/frameflow_db.json?nocache=${Date.now()}`;
             const publicRes = await fetch(dbPublicUrl);
             if (publicRes.ok) cloudDb = await publicRes.json();
@@ -156,7 +163,6 @@ export default function App() {
           console.warn("Reading fresh database layout...");
         }
 
-        // B. Read local storage fallback
         let localDb = { videos: [], drawings: {}, comments: [] };
         try {
           localDb.videos = JSON.parse(localStorage.getItem('frameflow_videos') || '[]');
@@ -164,7 +170,6 @@ export default function App() {
           localDb.comments = JSON.parse(localStorage.getItem('frameflow_comments') || '[]');
         } catch (e) {}
 
-        // C. Fetch raw video files from Bunny Storage API (Los Angeles Endpoint)
         const storageApiUrl = `${BUNNY_STORAGE_API_URL}/`;
         const storageRes = await fetch(storageApiUrl, {
           method: 'GET',
@@ -184,7 +189,6 @@ export default function App() {
           );
         }
 
-        // D. Build Metadata Map (Preserves folders, comments, titles, statuses)
         const allSavedVideos = [...(cloudDb.videos || []), ...(localDb.videos || [])];
         const metaMap = new Map();
         allSavedVideos.forEach(v => {
@@ -199,8 +203,8 @@ export default function App() {
           }
         });
 
-        // E. Normalize Comments
-        const allComments = [...(cloudDb.comments || []), ...(localDb.comments || [])];
+        // Merge Comments (Preserve local + cloud seamlessly)
+        const allComments = [...(localDb.comments || []), ...(cloudDb.comments || [])];
         const commentMap = new Map();
         allComments.forEach(c => {
           if (c && c.id) {
@@ -212,7 +216,6 @@ export default function App() {
           }
         });
 
-        // F. Normalize Drawings
         const rawDrawings = { ...(localDb.drawings || {}), ...(cloudDb.drawings || {}) };
         const normalizedDrawings = {};
         Object.keys(rawDrawings).forEach(key => {
@@ -223,7 +226,6 @@ export default function App() {
           };
         });
 
-        // G. Build final video objects
         const mergedVideoList = bunnyFiles.map(file => {
           const filename = file.ObjectName;
           const publicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/${filename}`;
@@ -575,7 +577,7 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
-  // Comment Handlers
+  // Comment Handlers (Saves instantly to LocalStorage + Cloud)
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -588,7 +590,7 @@ export default function App() {
       timestamp: currentTime,
       timeFormatted: formatTime(currentTime),
       author: authorName,
-      text: commentText,
+      text: commentText.trim(),
       completed: false,
       createdAt: new Date().toISOString()
     };
@@ -600,12 +602,21 @@ export default function App() {
     const updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status: 'Changes Requested' } : v);
     setVideos(updatedVideos);
 
+    // Save locally immediately
+    try {
+      localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
+      localStorage.setItem('frameflow_videos', JSON.stringify(updatedVideos));
+    } catch(e) {}
+
     saveCloudDatabaseDirect(updatedVideos, drawings, updatedComments);
   };
 
   const toggleCommentComplete = (id) => {
     const updatedComments = comments.map(c => c.id === id ? { ...c, completed: !c.completed } : c);
     setComments(updatedComments);
+    try {
+      localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
+    } catch(e) {}
     saveCloudDatabaseDirect(videos, drawings, updatedComments);
   };
 
@@ -726,17 +737,17 @@ export default function App() {
   });
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
-      {/* GLOBAL LEFT SIDEBAR */}
-      <div className="w-60 bg-slate-900 border-r border-slate-800 flex flex-col justify-between flex-shrink-0">
+      {/* GLOBAL SIDEBAR (Responsive) */}
+      <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
           {/* Logo Header */}
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-lg shadow-lg shadow-indigo-950">FF</div>
+              <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-base md:text-lg shadow-lg shadow-indigo-950">FF</div>
               <div>
-                <div className="font-bold text-base tracking-wide text-white leading-none">FrameFlow</div>
+                <div className="font-bold text-sm md:text-base tracking-wide text-white leading-none">FrameFlow</div>
                 <div className="text-[10px] text-slate-400 mt-1">Video Studio Pro</div>
               </div>
             </div>
@@ -752,16 +763,16 @@ export default function App() {
           </div>
 
           {/* Nav Items */}
-          <div className="p-3 space-y-1">
+          <div className="p-2 md:p-3 flex md:flex-col gap-1">
             <button 
               onClick={() => setCurrentView('dashboard')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition ${
+              className={`flex-1 md:w-full flex items-center justify-center md:justify-start gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
                 currentView === 'dashboard' 
                   ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              <Home size={16} /> Home
+              <Home size={15} /> Home
             </button>
 
             <button 
@@ -773,18 +784,18 @@ export default function App() {
                   setIsUploadOpen(true);
                 }
               }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition ${
+              className={`flex-1 md:w-full flex items-center justify-center md:justify-start gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
                 currentView === 'review' 
                   ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              <Video size={16} /> Review Player
+              <Video size={15} /> Review Player
             </button>
           </div>
 
           {/* Brand Workspace Filters */}
-          <div className="px-4 py-3 border-t border-slate-800/80">
+          <div className="hidden md:block px-4 py-3 border-t border-slate-800/80">
             <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 block">Brand Workspace</label>
             <select 
               value={selectedBrand} 
@@ -798,7 +809,7 @@ export default function App() {
         </div>
 
         {/* Bottom Upload Button */}
-        <div className="p-3 border-t border-slate-800">
+        <div className="hidden md:block p-3 border-t border-slate-800">
           <button 
             onClick={() => setIsUploadOpen(true)}
             className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 px-4 rounded-lg transition text-xs shadow-lg shadow-indigo-950"
@@ -815,12 +826,12 @@ export default function App() {
         <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950">
           
           {/* Top Search Bar */}
-          <div className="h-16 border-b border-slate-800 px-8 flex items-center justify-between bg-slate-900/40 sticky top-0 backdrop-blur z-20">
-            <div className="relative w-96">
+          <div className="h-16 border-b border-slate-800 px-4 md:px-8 flex items-center justify-between bg-slate-900/40 sticky top-0 backdrop-blur z-20 gap-4">
+            <div className="relative flex-1 max-w-md">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input 
                 type="text" 
-                placeholder="Search videos, brands, or cuts..." 
+                placeholder="Search videos, brands..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
@@ -829,43 +840,14 @@ export default function App() {
 
             <button 
               onClick={() => setIsUploadOpen(true)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2 px-4 rounded-xl transition shadow-md"
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2 px-4 rounded-xl transition shadow-md whitespace-nowrap"
             >
               <Plus size={16} /> Upload
             </button>
           </div>
 
-          <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
+          <div className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
             
-            {/* Quick Action Tiles */}
-            <div className="grid grid-cols-2 gap-4 max-w-lg">
-              <button 
-                onClick={() => setIsUploadOpen(true)}
-                className="flex items-center gap-3 bg-slate-900/90 border border-slate-800 hover:border-slate-700 p-4 rounded-xl text-left transition hover:bg-slate-900 group shadow-sm"
-              >
-                <div className="p-2.5 bg-indigo-950/80 text-indigo-400 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition">
-                  <Upload size={18} />
-                </div>
-                <div>
-                  <div className="font-semibold text-xs text-slate-200">Upload</div>
-                  <div className="text-[10px] text-slate-500">From computer</div>
-                </div>
-              </button>
-
-              <button 
-                onClick={() => setIsUploadOpen(true)}
-                className="flex items-center gap-3 bg-slate-900/90 border border-slate-800 hover:border-slate-700 p-4 rounded-xl text-left transition hover:bg-slate-900 group shadow-sm"
-              >
-                <div className="p-2.5 bg-slate-800 text-slate-400 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition">
-                  <Folder size={18} />
-                </div>
-                <div>
-                  <div className="font-semibold text-xs text-slate-200">Import</div>
-                  <div className="text-[10px] text-slate-500">From web link / URL</div>
-                </div>
-              </button>
-            </div>
-
             {/* Recents Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -878,14 +860,14 @@ export default function App() {
                   No assets found in Bunny CDN. Click Upload to add your first video!
                 </div>
               ) : (
-                <div className="grid grid-cols-4 gap-5">
-                  {filteredVideos.slice(0, 4).map((vid) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {filteredVideos.map((vid) => (
                     <div 
                       key={vid.id}
                       onClick={() => openVideoReview(vid.id)}
                       className="group bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30 relative"
                     >
-                      <div className="relative aspect-video bg-black overflow-hidden">
+                      <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
                         <video src={vid.url} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
                         <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition" />
                         
@@ -977,94 +959,6 @@ export default function App() {
               )}
             </div>
 
-            {/* All Brand Assets Section */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-bold text-slate-200 tracking-wide">Brand Assets</h2>
-              </div>
-
-              {filteredVideos.length === 0 ? (
-                <div className="p-12 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 text-xs">
-                  No assets available.
-                </div>
-              ) : (
-                <div className="grid grid-cols-4 gap-5">
-                  {filteredVideos.map((vid) => (
-                    <div 
-                      key={vid.id}
-                      onClick={() => openVideoReview(vid.id)}
-                      className="group bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30"
-                    >
-                      <div className="relative aspect-video bg-black overflow-hidden">
-                        <video src={vid.url} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                        <div className="absolute bottom-2 right-2 bg-black/80 px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-300">
-                          {formatTime(vid.duration)}
-                        </div>
-                      </div>
-                      <div className="p-3">
-                        {editingTitleId === vid.id ? (
-                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                            <input 
-                              type="text" 
-                              value={tempTitleText} 
-                              onChange={(e) => setTempTitleText(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && saveRenameVideo(vid.id, e)}
-                              autoFocus
-                              className="w-full bg-slate-800 border border-indigo-500 rounded text-xs px-1.5 py-0.5 text-white focus:outline-none"
-                            />
-                            <button onClick={(e) => saveRenameVideo(vid.id, e)} className="text-emerald-400 p-0.5 hover:bg-slate-800 rounded">
-                              <Check size={14} />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1 group/title">
-                            <div className="font-semibold text-xs text-slate-200 truncate group-hover:text-indigo-400 transition">
-                              {vid.title}
-                            </div>
-                            <button 
-                              onClick={(e) => startRenameVideo(vid.id, vid.title, e)} 
-                              title="Rename Video"
-                              className="opacity-0 group-hover/title:opacity-100 text-slate-400 hover:text-white transition p-0.5"
-                            >
-                              <Pencil size={11} />
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between">
-                          <select
-                            value={vid.brand}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => handleUpdateBrand(vid.id, e.target.value, e)}
-                            className="text-[10px] bg-slate-800 border border-slate-700/80 text-indigo-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium hover:bg-slate-700 transition"
-                          >
-                            {brands.map(b => <option key={b} value={b}>{b}</option>)}
-                          </select>
-
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={(e) => handleCopyLink(vid.id, e)}
-                              title="Copy Hive Link"
-                              className="text-slate-500 hover:text-slate-200 p-0.5"
-                            >
-                              <Share2 size={12} />
-                            </button>
-                            <button 
-                              onClick={(e) => handleDeleteVideo(vid.id, e)}
-                              title="Delete Asset"
-                              className="text-slate-500 hover:text-red-400 p-0.5"
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
           </div>
         </div>
       )}
@@ -1073,333 +967,307 @@ export default function App() {
       {/* VIEW 2: FRAMEFLOW VIDEO REVIEW PLAYER STUDIO              */}
       {/* ========================================================= */}
       {currentView === 'review' && activeVideo && (
-        <div className="flex-1 flex flex-col bg-slate-950 min-w-0">
+        <div className="flex-1 flex flex-col lg:flex-row bg-slate-950 min-w-0 overflow-y-auto lg:overflow-hidden">
           
-          {/* Top Navbar */}
-          <div className="h-16 border-b border-slate-800 px-6 flex items-center justify-between bg-slate-900/50">
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => setCurrentView('dashboard')}
-                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition"
-              >
-                <ArrowLeft size={14} /> Back to Dashboard
-              </button>
-              
-              <div className="flex items-center gap-3">
-                {editingTitleId === activeVideoId ? (
-                  <div className="flex items-center gap-1">
-                    <input 
-                      type="text" 
-                      value={tempTitleText} 
-                      onChange={(e) => setTempTitleText(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && saveRenameVideo(activeVideoId, e)}
-                      autoFocus
-                      className="bg-slate-800 border border-indigo-500 rounded text-sm px-2 py-1 text-white focus:outline-none"
-                    />
-                    <button onClick={(e) => saveRenameVideo(activeVideoId, e)} className="text-emerald-400 p-1 hover:bg-slate-800 rounded">
-                      <Check size={16} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 group/headerTitle">
-                    <h1 
-                      onClick={(e) => startRenameVideo(activeVideoId, activeVideo.title, e)}
-                      className="text-sm font-bold text-white hover:text-indigo-300 cursor-pointer transition"
-                      title="Click to rename"
-                    >
-                      {activeVideo?.title}
-                    </h1>
-                    <button 
-                      onClick={(e) => startRenameVideo(activeVideoId, activeVideo.title, e)} 
-                      title="Rename Video"
-                      className="opacity-0 group-hover/headerTitle:opacity-100 text-slate-400 hover:text-white transition p-1"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                  </div>
-                )}
-
-                <select
-                  value={activeVideo?.brand || 'Thrive'}
-                  onChange={(e) => handleUpdateBrand(activeVideoId, e.target.value)}
-                  className="text-xs bg-slate-800 border border-slate-700 text-indigo-300 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer font-medium hover:bg-slate-700 transition"
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Responsive Top Controls Header */}
+            <div className="p-3 lg:px-6 lg:py-3 border-b border-slate-800 bg-slate-900/50 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button 
+                  onClick={() => setCurrentView('dashboard')}
+                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition"
                 >
-                  {brands.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center bg-slate-800 p-1 rounded-lg border border-slate-700">
-                {['In Review', 'Changes Requested', 'Approved'].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => handleUpdateStatus(status)}
-                    className={`px-2.5 py-1 rounded text-[11px] font-medium transition ${
-                      activeVideo?.status === status 
-                        ? status === 'Approved' ? 'bg-emerald-600 text-white' 
-                          : status === 'Changes Requested' ? 'bg-amber-600 text-white' 
-                          : 'bg-indigo-600 text-white'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {status}
-                  </button>
-                ))}
-              </div>
-
-              <button 
-                onClick={(e) => handleCopyLink(activeVideoId, e)}
-                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1.5 px-3 rounded-lg border border-slate-700 transition"
-              >
-                <Share2 size={13} /> Copy Link
-              </button>
-
-              <a 
-                href={activeVideo?.url} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                download 
-                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1.5 px-3 rounded-lg border border-slate-700 transition"
-              >
-                <Download size={13} /> Download
-              </a>
-
-              <button 
-                onClick={() => setIsReplaceOpen(true)}
-                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1.5 px-3 rounded-lg border border-slate-700 transition"
-              >
-                <RotateCcw size={13} /> Replace
-              </button>
-
-              <button 
-                onClick={(e) => handleDeleteVideo(activeVideoId, e)}
-                className="flex items-center gap-1.5 bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-800/80 text-xs font-medium py-1.5 px-3 rounded-lg transition"
-              >
-                <Trash2 size={13} /> Delete
-              </button>
-
-              <button 
-                onClick={generateAiActionPlan}
-                className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-medium py-1.5 px-3 rounded-lg transition shadow-md"
-              >
-                <Sparkles size={13} /> AI Plan
-              </button>
-            </div>
-          </div>
-
-          {/* Video Canvas Container */}
-          <div className="flex-1 flex flex-col justify-center items-center p-6 bg-slate-950 relative overflow-hidden">
-            <div className="relative aspect-video max-h-[65vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 group">
-              
-              <video
-                ref={videoRef}
-                src={activeVideo?.url}
-                className="w-full h-full object-contain"
-                onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
-                onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
-                onClick={() => {
-                  if (isPlaying) {
-                    videoRef.current?.pause();
-                    setIsPlaying(false);
-                  } else {
-                    videoRef.current?.play();
-                    setIsPlaying(true);
-                  }
-                }}
-              />
-
-              {/* Drawing Canvas Overlay */}
-              <canvas
-                ref={canvasRef}
-                width={1280}
-                height={720}
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={stopDrawing}
-                onTouchStart={startDrawing}
-                onTouchMove={draw}
-                onTouchEnd={stopDrawing}
-                className={`absolute inset-0 w-full h-full object-contain ${
-                  isDrawingMode ? 'cursor-crosshair pointer-events-auto' : 'pointer-events-none'
-                }`}
-              />
-
-              {/* Drawing Toolbar Overlay */}
-              <div className="absolute top-4 left-4 flex items-center gap-2 bg-slate-900/90 backdrop-blur border border-slate-700 p-1.5 rounded-lg shadow-lg">
-                <button
-                  onClick={() => setIsDrawingMode(!isDrawingMode)}
-                  className={`p-2 rounded-md transition ${
-                    isDrawingMode ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                  title="Toggle Drawing Tool"
-                >
-                  <Pencil size={18} />
+                  <ArrowLeft size={14} /> Back
                 </button>
-
-                {isDrawingMode && (
-                  <>
-                    <div className="h-4 w-px bg-slate-700 mx-1" />
-                    {['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#FFFFFF'].map(color => (
-                      <button
-                        key={color}
-                        onClick={() => setStrokeColor(color)}
-                        className={`w-5 h-5 rounded-full border border-slate-600 transition ${
-                          strokeColor === color ? 'scale-125 ring-2 ring-indigo-500' : ''
-                        }`}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Custom Video Timeline Controls & Pinpoints */}
-            <div className="w-full max-w-5xl mt-4 bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-              <div className="relative w-full h-4 bg-slate-800 rounded-lg cursor-pointer group flex items-center">
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 100}
-                  step={0.1}
-                  value={currentTime}
-                  onChange={(e) => jumpToTime(parseFloat(e.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer"
-                />
                 
-                <div 
-                  className="h-full bg-indigo-600 rounded-lg relative z-10"
-                  style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
-                />
+                <div className="flex items-center gap-2">
+                  <h1 
+                    onClick={(e) => startRenameVideo(activeVideoId, activeVideo.title, e)}
+                    className="text-xs md:text-sm font-bold text-white hover:text-indigo-300 cursor-pointer transition truncate max-w-[180px] md:max-w-xs"
+                    title="Click to rename"
+                  >
+                    {activeVideo?.title}
+                  </h1>
 
-                {activeComments.map(c => {
-                  const percent = (c.timestamp / (duration || 1)) * 100;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        jumpToTime(c.timestamp);
-                      }}
-                      style={{ left: `${percent}%` }}
-                      className={`absolute z-30 w-3 h-5 -top-0.5 rounded-sm transform -translate-x-1/2 border border-slate-900 transition hover:scale-125 ${
-                        c.hasDrawing ? 'bg-amber-400' : 'bg-indigo-400'
-                      }`}
-                      title={`[${c.timeFormatted}] ${c.author}: ${c.text}`}
-                    />
-                  );
-                })}
+                  <select
+                    value={activeVideo?.brand || 'Thrive'}
+                    onChange={(e) => handleUpdateBrand(activeVideoId, e.target.value)}
+                    className="text-[11px] bg-slate-800 border border-slate-700 text-indigo-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer font-medium hover:bg-slate-700 transition"
+                  >
+                    {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
               </div>
 
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() => {
-                      if (isPlaying) {
-                        videoRef.current?.pause();
-                        setIsPlaying(false);
-                      } else {
-                        videoRef.current?.play();
-                        setIsPlaying(true);
-                      }
-                    }}
-                    className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
-                  >
-                    {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-                  </button>
-
-                  <div className="font-mono text-slate-300 text-xs">
-                    <span>{formatTime(currentTime)}</span> / <span>{formatTime(duration)}</span>
-                  </div>
+              {/* Action Buttons Wrap */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700 text-[10px]">
+                  {['In Review', 'Changes Requested', 'Approved'].map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => handleUpdateStatus(status)}
+                      className={`px-2 py-1 rounded font-medium transition ${
+                        activeVideo?.status === status 
+                          ? status === 'Approved' ? 'bg-emerald-600 text-white' 
+                            : status === 'Changes Requested' ? 'bg-amber-600 text-white' 
+                            : 'bg-indigo-600 text-white'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {status}
+                    </button>
+                  ))}
                 </div>
 
-                <div className="flex items-center gap-3">
+                <button 
+                  onClick={(e) => handleCopyLink(activeVideoId, e)}
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                >
+                  <Share2 size={12} /> Share
+                </button>
+
+                <a 
+                  href={activeVideo?.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  download 
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                >
+                  <Download size={12} />
+                </a>
+
+                <button 
+                  onClick={() => setIsReplaceOpen(true)}
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                >
+                  <RotateCcw size={12} />
+                </button>
+
+                <button 
+                  onClick={(e) => handleDeleteVideo(activeVideoId, e)}
+                  className="flex items-center gap-1 bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-800/80 text-xs font-medium py-1 px-2.5 rounded-lg transition"
+                >
+                  <Trash2 size={12} />
+                </button>
+
+                <button 
+                  onClick={generateAiActionPlan}
+                  className="flex items-center gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-medium py-1 px-2.5 rounded-lg transition shadow"
+                >
+                  <Sparkles size={12} /> AI
+                </button>
+              </div>
+            </div>
+
+            {/* Video Canvas Container (Adapts smoothly to 16:9 widescreen or 9:16 vertical videos) */}
+            <div className="flex-1 flex flex-col justify-center items-center p-3 md:p-6 bg-slate-950 relative overflow-hidden min-h-[50vh]">
+              <div className="relative max-h-[60vh] lg:max-h-[70vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
+                
+                <video
+                  ref={videoRef}
+                  src={activeVideo?.url}
+                  className="max-h-[60vh] lg:max-h-[70vh] w-full object-contain"
+                  onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
+                  onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
+                  onClick={() => {
+                    if (isPlaying) {
+                      videoRef.current?.pause();
+                      setIsPlaying(false);
+                    } else {
+                      videoRef.current?.play();
+                      setIsPlaying(true);
+                    }
+                  }}
+                />
+
+                {/* Drawing Canvas Overlay */}
+                <canvas
+                  ref={canvasRef}
+                  width={1280}
+                  height={720}
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
+                  className={`absolute inset-0 w-full h-full object-contain ${
+                    isDrawingMode ? 'cursor-crosshair pointer-events-auto' : 'pointer-events-none'
+                  }`}
+                />
+
+                {/* Drawing Toolbar Overlay */}
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1 rounded-lg shadow-lg z-20">
+                  <button
+                    onClick={() => setIsDrawingMode(!isDrawingMode)}
+                    className={`p-1.5 rounded transition ${
+                      isDrawingMode ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Toggle Drawing Tool"
+                  >
+                    <Pencil size={16} />
+                  </button>
+
+                  {isDrawingMode && (
+                    <>
+                      <div className="h-3 w-px bg-slate-700 mx-0.5" />
+                      {['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#FFFFFF'].map(color => (
+                        <button
+                          key={color}
+                          onClick={() => setStrokeColor(color)}
+                          className={`w-4 h-4 rounded-full border border-slate-600 transition ${
+                            strokeColor === color ? 'scale-125 ring-2 ring-indigo-500' : ''
+                          }`}
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Custom Video Timeline Controls & Pinpoints */}
+              <div className="w-full max-w-5xl mt-3 bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
+                <div className="relative w-full h-3 bg-slate-800 rounded-lg cursor-pointer flex items-center">
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration || 100}
+                    step={0.1}
+                    value={currentTime}
+                    onChange={(e) => jumpToTime(parseFloat(e.target.value))}
+                    className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer"
+                  />
+                  
+                  <div 
+                    className="h-full bg-indigo-600 rounded-lg relative z-10"
+                    style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
+                  />
+
+                  {activeComments.map(c => {
+                    const percent = (c.timestamp / (duration || 1)) * 100;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          jumpToTime(c.timestamp);
+                        }}
+                        style={{ left: `${percent}%` }}
+                        className={`absolute z-30 w-2.5 h-4 -top-0.5 rounded-sm transform -translate-x-1/2 border border-slate-900 transition hover:scale-125 ${
+                          c.hasDrawing ? 'bg-amber-400' : 'bg-indigo-400'
+                        }`}
+                        title={`[${c.timeFormatted}] ${c.author}: ${c.text}`}
+                      />
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        if (isPlaying) {
+                          videoRef.current?.pause();
+                          setIsPlaying(false);
+                        } else {
+                          videoRef.current?.play();
+                          setIsPlaying(true);
+                        }
+                      }}
+                      className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
+                    >
+                      {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+                    </button>
+
+                    <div className="font-mono text-slate-300 text-[11px]">
+                      <span>{formatTime(currentTime)}</span> / <span>{formatTime(duration)}</span>
+                    </div>
+                  </div>
+
                   <button 
                     onClick={() => setIsMuted(!isMuted)}
                     className="text-slate-400 hover:text-white"
                   >
-                    {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                   </button>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* RIGHT SIDEBAR: Comments & Markup History (Review Mode Only) */}
-      {currentView === 'review' && activeVideo && (
-        <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0">
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-            <h2 className="font-bold text-white text-xs flex items-center gap-2 uppercase tracking-wider">
-              <MessageSquare size={14} /> Comments ({activeComments.length})
-            </h2>
-          </div>
+          {/* COMMENTS SIDEBAR / BOTTOM PANEL */}
+          <div className="w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col flex-shrink-0 min-h-[300px] lg:min-h-0">
+            <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+              <h2 className="font-bold text-white text-xs flex items-center gap-2 uppercase tracking-wider">
+                <MessageSquare size={14} /> Comments ({activeComments.length})
+              </h2>
+            </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {activeComments.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 text-xs">
-                No comments or drawings yet.<br/>Pause and write a note or draw on the video!
-              </div>
-            ) : (
-              activeComments.map(c => (
-                <div 
-                  key={c.id} 
-                  className={`p-3 rounded-lg border transition ${
-                    c.completed ? 'bg-slate-900/40 border-slate-800 opacity-60' : 'bg-slate-800/60 border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-xs text-indigo-400">{c.author}</span>
-                    <button 
-                      onClick={() => jumpToTime(c.timestamp)}
-                      className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white transition"
-                    >
-                      {c.timeFormatted}
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-200 mt-1">{c.text}</p>
-                  <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-700/50">
-                    <button 
-                      onClick={() => toggleCommentComplete(c.id)}
-                      className={`flex items-center gap-1 text-[11px] font-medium transition ${
-                        c.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <Check size={12} /> {c.completed ? 'Resolved' : 'Mark Resolved'}
-                    </button>
-                  </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[350px] lg:max-h-none">
+              {activeComments.length === 0 ? (
+                <div className="text-center py-8 text-slate-500 text-xs">
+                  No comments or drawings yet.<br/>Pause and write a note or draw on the video!
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                activeComments.map(c => (
+                  <div 
+                    key={c.id} 
+                    className={`p-2.5 rounded-lg border transition ${
+                      c.completed ? 'bg-slate-900/40 border-slate-800 opacity-60' : 'bg-slate-800/60 border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-xs text-indigo-400">{c.author}</span>
+                      <button 
+                        onClick={() => jumpToTime(c.timestamp)}
+                        className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white transition"
+                      >
+                        {c.timeFormatted}
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-200">{c.text}</p>
+                    <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-700/50">
+                      <button 
+                        onClick={() => toggleCommentComplete(c.id)}
+                        className={`flex items-center gap-1 text-[10px] font-medium transition ${
+                          c.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <Check size={11} /> {c.completed ? 'Resolved' : 'Mark Resolved'}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
 
-          <form onSubmit={handleAddComment} className="p-3 border-t border-slate-800 space-y-2">
-            <input 
-              type="text" 
-              placeholder="Your Name"
-              value={authorName}
-              onChange={(e) => setAuthorName(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200"
-            />
-            <div className="flex gap-2">
+            <form onSubmit={handleAddComment} className="p-3 border-t border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
-                placeholder="Add feedback at current frame..."
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                className="flex-1 bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:ring-1 focus:ring-indigo-500"
+                placeholder="Your Name"
+                value={authorName}
+                onChange={(e) => setAuthorName(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
               />
-              <button 
-                type="submit"
-                className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
-              >
-                <Send size={14} />
-              </button>
-            </div>
-          </form>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  placeholder="Add feedback at frame..."
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  className="flex-1 bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                />
+                <button 
+                  type="submit"
+                  className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
+                >
+                  <Send size={14} />
+                </button>
+              </div>
+            </form>
+          </div>
+
         </div>
       )}
 
