@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v1.8",
-  title: "Comment Deletion, Drawing Undo & Direct Touch-Tracking",
-  description: "You can now delete comments and undo drawing strokes! Pencil sizes are larger for mobile screens and track precisely under your finger."
+  version: "v1.9",
+  title: "Real-Time Cross-Device Comment Deletion",
+  description: "Deleting comments or undoing drawing markups on mobile now instantly removes them from desktop screens in real time!"
 };
 
 // Safe Deterministic ID Generator: Prevents double-prefixing IDs on sync
@@ -67,7 +67,7 @@ export default function App() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
 
-  // Drawing State (Default stroke width increased to 8px for mobile)
+  // Drawing State (Default stroke width 8px for mobile visibility)
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#EF4444');
   const [strokeWidth, setStrokeWidth] = useState(8);
@@ -260,7 +260,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Reflects Deletions Immediately)
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -272,6 +272,37 @@ export default function App() {
         if (res.ok) {
           const cloudDb = await res.json();
 
+          // Direct Match Sync for Comments (Accurately syncs deleted comments across devices)
+          if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
+            const normalizedCloudComments = cloudDb.comments.map(c => ({
+              ...c,
+              videoId: getDeterministicId(c.videoId) || c.videoId
+            }));
+
+            setComments(prevComments => {
+              if (JSON.stringify(prevComments) !== JSON.stringify(normalizedCloudComments)) {
+                return normalizedCloudComments;
+              }
+              return prevComments;
+            });
+          }
+
+          // Direct Match Sync for Drawings (Accurately syncs undos across devices)
+          if (cloudDb.drawings) {
+            setDrawings(prevDrawings => {
+              const normalizedDrawings = {};
+              Object.keys(cloudDb.drawings).forEach(vidKey => {
+                const normKey = getDeterministicId(vidKey);
+                normalizedDrawings[normKey] = cloudDb.drawings[vidKey];
+              });
+              if (JSON.stringify(prevDrawings) !== JSON.stringify(normalizedDrawings)) {
+                return normalizedDrawings;
+              }
+              return prevDrawings;
+            });
+          }
+
+          // Sync Video Titles, Brands, Statuses
           if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
             setVideos(prevVideos => {
               const vidMap = new Map();
@@ -309,41 +340,6 @@ export default function App() {
               });
 
               return hasChange ? Array.from(vidMap.values()) : prevVideos;
-            });
-          }
-
-          if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
-            setComments(prevComments => {
-              const commentMap = new Map();
-              prevComments.forEach(c => commentMap.set(c.id, c));
-              cloudDb.comments.forEach(c => {
-                if (c && c.id) {
-                  const normVidId = getDeterministicId(c.videoId);
-                  commentMap.set(c.id, { ...c, videoId: normVidId || c.videoId });
-                }
-              });
-              const merged = Array.from(commentMap.values());
-              if (JSON.stringify(merged) !== JSON.stringify(prevComments)) {
-                return merged;
-              }
-              return prevComments;
-            });
-          }
-
-          if (cloudDb.drawings) {
-            setDrawings(prevDrawings => {
-              const merged = { ...prevDrawings };
-              Object.keys(cloudDb.drawings).forEach(vidKey => {
-                const normKey = getDeterministicId(vidKey);
-                merged[normKey] = {
-                  ...(merged[normKey] || {}),
-                  ...cloudDb.drawings[vidKey]
-                };
-              });
-              if (JSON.stringify(merged) !== JSON.stringify(prevDrawings)) {
-                return merged;
-              }
-              return prevDrawings;
             });
           }
         }
@@ -537,7 +533,6 @@ export default function App() {
   };
 
   // 🎯 ACCURATE TOUCH & MOUSE CANVAS COORDINATE CALCULATOR
-  // Handles letterboxing/pillarboxing scaling so drawing tracks directly under finger
   const getCanvasCoordinates = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -803,14 +798,14 @@ export default function App() {
   };
 
   // 🗑️ DELETE COMMENT HANDLER
-  const handleDeleteComment = (commentId, e) => {
+  const handleDeleteComment = async (commentId, e) => {
     if (e) e.stopPropagation();
     const updatedComments = comments.filter(c => c.id !== commentId);
     setComments(updatedComments);
     try {
       localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
     } catch(e) {}
-    saveCloudDatabaseDirect(videos, drawings, updatedComments);
+    await saveCloudDatabaseDirect(videos, drawings, updatedComments);
   };
 
   const handleFileSelect = async (e) => {
@@ -1531,7 +1526,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* INPUT FORM */}
+            {/* INPUT FORM (16px Font on Mobile Prevents Auto-Zoom) */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
@@ -1599,7 +1594,6 @@ export default function App() {
                         <Check size={11} /> {c.completed ? 'Resolved' : 'Mark Resolved'}
                       </button>
 
-                      {/* 🗑️ DELETE COMMENT BUTTON */}
                       <button 
                         onClick={(e) => handleDeleteComment(c.id, e)}
                         className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-red-400 transition"
