@@ -3,7 +3,7 @@ import {
   Play, Pause, Volume2, VolumeX, Maximize, Pencil, MessageSquare, 
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
-  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo
+  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo, MapPin
 } from 'lucide-react';
 
 // ==========================================
@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v2.7",
-  title: "Automatic Direct Video Download",
-  description: "Clicking the Download button now triggers an immediate file download directly to your device without opening new browser windows!"
+  version: "v3.0",
+  title: "Spatial On-Video Pinpoint Comments",
+  description: "Click anywhere on the video frame to drop a spatial pinpoint marker and type an inline note directly on screen!"
 };
 
 // Safe Deterministic ID Generator
@@ -76,6 +76,7 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
+  // Drawing State
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#EF4444');
   const [strokeWidth, setStrokeWidth] = useState(8);
@@ -86,6 +87,10 @@ export default function App() {
   });
   const [currentPath, setCurrentPath] = useState([]);
   const [isMouseDown, setIsMouseDown] = useState(false);
+
+  // 📍 SPATIAL PINPOINT STATE
+  const [activePin, setActivePin] = useState(null); // { xPercent, yPercent, timestamp, timeFormatted }
+  const [inlinePinText, setInlinePinText] = useState('');
 
   const [comments, setComments] = useState(() => {
     try {
@@ -491,7 +496,7 @@ export default function App() {
     }
   };
 
-  // 📥 DIRECT BLOB DOWNLOAD HANDLER (Bypasses Cross-Origin Browser Blocks)
+  // 📥 DIRECT BLOB DOWNLOAD HANDLER
   const handleDownloadVideo = async (e) => {
     if (e) e.stopPropagation();
     if (!activeVideo?.url) return;
@@ -632,7 +637,7 @@ export default function App() {
   // 🎯 ACCURATE TOUCH & MOUSE CANVAS COORDINATE CALCULATOR
   const getCanvasCoordinates = (e) => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+    if (!canvas) return { x: 0, y: 0, xPercent: 0, yPercent: 0 };
     const rect = canvas.getBoundingClientRect();
 
     let clientX = e.clientX;
@@ -650,7 +655,7 @@ export default function App() {
     const nativeWidth = canvas.width;
     const nativeHeight = canvas.height;
 
-    if (elementWidth === 0 || elementHeight === 0) return { x: 0, y: 0 };
+    if (elementWidth === 0 || elementHeight === 0) return { x: 0, y: 0, xPercent: 0, yPercent: 0 };
 
     const elementRatio = elementWidth / elementHeight;
     const nativeRatio = nativeWidth / nativeHeight;
@@ -672,10 +677,74 @@ export default function App() {
     const clickX = clientX - rect.left - offsetX;
     const clickY = clientY - rect.top - offsetY;
 
+    const rawX = Math.max(0, Math.min(nativeWidth, (clickX / renderWidth) * nativeWidth));
+    const rawY = Math.max(0, Math.min(nativeHeight, (clickY / renderHeight) * nativeHeight));
+
+    // Calculate percentage relative to video container so it scales across devices
+    const xPercent = Math.max(5, Math.min(92, ((clientX - rect.left) / elementWidth) * 100));
+    const yPercent = Math.max(5, Math.min(90, ((clientY - rect.top) / elementHeight) * 100));
+
     return {
-      x: Math.max(0, Math.min(nativeWidth, (clickX / renderWidth) * nativeWidth)),
-      y: Math.max(0, Math.min(nativeHeight, (clickY / renderHeight) * nativeHeight))
+      x: rawX,
+      y: rawY,
+      xPercent,
+      yPercent
     };
+  };
+
+  // 📍 SPATIAL PINPOINT INTERACTION ON VIDEO CLICK
+  const handleCanvasClick = (e) => {
+    if (isDrawingMode) return;
+
+    if (isPlaying) {
+      videoRef.current?.pause();
+      setIsPlaying(false);
+    }
+
+    const coords = getCanvasCoordinates(e);
+    
+    // Open floating inline pin pop-up overlay
+    setActivePin({
+      xPercent: coords.xPercent,
+      yPercent: coords.yPercent,
+      timestamp: currentTime,
+      timeFormatted: formatTime(currentTime)
+    });
+    setInlinePinText('');
+  };
+
+  // 📍 SUBMIT SPATIAL PINPOINT NOTE
+  const handlePostInlinePinComment = (e) => {
+    if (e) e.preventDefault();
+    if (!inlinePinText.trim() || !activePin || !activeVideo) return;
+
+    const targetVidId = activeVideo.id;
+
+    const newComment = {
+      id: 'c-' + Date.now(),
+      videoId: targetVidId,
+      timestamp: activePin.timestamp,
+      timeFormatted: activePin.timeFormatted,
+      author: authorName,
+      text: inlinePinText.trim(),
+      completed: false,
+      createdAt: new Date().toISOString(),
+      pinLocation: {
+        x: activePin.xPercent,
+        y: activePin.yPercent
+      }
+    };
+
+    const nextComments = [...comments, newComment];
+    setComments(nextComments);
+    setHighlightedCommentId(newComment.id);
+    setActivePin(null);
+    setInlinePinText('');
+
+    const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
+    setVideos(updatedVideos);
+
+    saveCloudDatabaseDirect(updatedVideos, drawings, nextComments);
   };
 
   const startDrawing = (e) => {
@@ -1134,6 +1203,14 @@ export default function App() {
     return 0;
   });
 
+  // Active spatial pins visible on the video screen for current timecode or highlighted comment
+  const activeFramePins = filteredComments.filter(c => 
+    c.pinLocation && (
+      c.id === highlightedCommentId || 
+      Math.abs(c.timestamp - currentTime) < 0.2
+    )
+  );
+
   const filteredVideos = videos.filter(v => {
     const matchesBrand = selectedBrand === 'All' || v.brand === selectedBrand;
     const matchesSearch = v.title.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1477,7 +1554,10 @@ export default function App() {
             </div>
 
             <div className="flex-1 flex flex-col justify-center items-center p-3 md:p-6 bg-slate-950 relative overflow-hidden min-h-[50vh]">
-              <div className="relative max-h-[60vh] lg:max-h-[70vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
+              <div 
+                className="relative max-h-[60vh] lg:max-h-[70vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
+                onClick={handleCanvasClick}
+              >
                 <video
                   ref={videoRef}
                   src={activeVideo?.url}
@@ -1485,15 +1565,6 @@ export default function App() {
                   className="max-h-[60vh] lg:max-h-[70vh] w-full object-contain"
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                   onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
-                  onClick={() => {
-                    if (isPlaying) {
-                      videoRef.current?.pause();
-                      setIsPlaying(false);
-                    } else {
-                      videoRef.current?.play();
-                      setIsPlaying(true);
-                    }
-                  }}
                 />
 
                 <canvas
@@ -1512,7 +1583,91 @@ export default function App() {
                   }`}
                 />
 
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1.5 rounded-lg shadow-lg z-20">
+                {/* 📍 RENDER SAVED SPATIAL PIN MARKERS ON VIDEO FRAME */}
+                {!isDrawingMode && activeFramePins.map(pinComment => (
+                  <div
+                    key={pinComment.id}
+                    onClick={(e) => handlePinpointClick(pinComment, e)}
+                    style={{
+                      left: `${pinComment.pinLocation.x}%`,
+                      top: `${pinComment.pinLocation.y}%`
+                    }}
+                    className={`absolute z-30 transform -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer group ${
+                      highlightedCommentId === pinComment.id ? 'scale-125 z-40' : 'hover:scale-110'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-full shadow-2xl border flex items-center justify-center ${
+                      highlightedCommentId === pinComment.id 
+                        ? 'bg-indigo-600 text-white border-white ring-4 ring-indigo-500/50 animate-pulse' 
+                        : 'bg-slate-900/90 text-indigo-400 border-indigo-500'
+                    }`}>
+                      <MapPin size={18} fill="currentColor" />
+                    </div>
+                  </div>
+                ))}
+
+                {/* 📍 FLOATING INLINE PINPOPUP MODAL (Matching Screenshot) */}
+                {activePin && (
+                  <div 
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      left: `${activePin.xPercent}%`,
+                      top: `${activePin.yPercent}%`,
+                      transform: 'translate(-10%, -50%)'
+                    }}
+                    className="absolute z-40 max-w-sm bg-slate-900/95 border border-slate-700/80 backdrop-blur-md rounded-2xl p-3 shadow-2xl space-y-2 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 bg-indigo-600 rounded-md text-white">
+                          <MapPin size={14} />
+                        </div>
+                        <span className="font-mono bg-indigo-950 text-indigo-300 border border-indigo-800/80 px-2 py-0.5 rounded-full font-semibold text-[10px]">
+                          {activePin.timeFormatted}
+                        </span>
+                        <span className="text-slate-400 text-[11px] truncate max-w-[100px]">{authorName}</span>
+                      </div>
+                      <button 
+                        onClick={() => setActivePin(null)} 
+                        className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handlePostInlinePinComment} className="space-y-2">
+                      <input 
+                        type="text" 
+                        autoFocus
+                        placeholder="Add a note..." 
+                        value={inlinePinText}
+                        onChange={(e) => setInlinePinText(e.target.value)}
+                        className="w-full bg-slate-800/90 border border-slate-700 rounded-xl p-2.5 text-[16px] md:text-xs text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                      />
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button 
+                          type="button" 
+                          onClick={() => setActivePin(null)}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-medium transition"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          type="submit" 
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-[11px] shadow transition"
+                        >
+                          Post
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* DRAWING TOOLBAR OVERLAY WITH UNDO & STROKE SIZE SELECTOR */}
+                <div 
+                  onClick={(e) => e.stopPropagation()} 
+                  className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1.5 rounded-lg shadow-lg z-20"
+                >
                   <button
                     onClick={() => setIsDrawingMode(!isDrawingMode)}
                     className={`p-1.5 rounded transition ${
@@ -1718,7 +1873,7 @@ export default function App() {
                 <div className="text-center py-8 text-slate-500 text-xs">
                   {commentFilter === 'resolved' 
                     ? 'No resolved comments yet.' 
-                    : 'No active comments. Add feedback above or draw on the video!'}
+                    : 'No active comments. Add feedback above, click video screen, or draw!'}
                 </div>
               ) : (
                 sortedComments.map(c => {
@@ -1753,6 +1908,12 @@ export default function App() {
                       {c.hasDrawing && (
                         <div className="mt-2 flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/40 border border-amber-800/50 px-2 py-0.5 rounded-md w-fit font-medium">
                           <Pencil size={11} /> Drawing Markup Attached
+                        </div>
+                      )}
+
+                      {c.pinLocation && (
+                        <div className="mt-2 flex items-center gap-1 text-[10px] text-indigo-300 bg-indigo-950/40 border border-indigo-800/50 px-2 py-0.5 rounded-md w-fit font-medium">
+                          <MapPin size={11} /> Spatial Pinpoint Attached
                         </div>
                       )}
 
