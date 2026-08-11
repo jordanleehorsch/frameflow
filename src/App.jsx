@@ -11,14 +11,19 @@ import {
 // ==========================================
 const BUNNY_STORAGE_ZONE = "thrive";
 const BUNNY_ACCESS_KEY = "d620773b-3709-413d-819288b64563-df1d-4b55";
+const BUNNY_STORAGE_API_URL = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}`;
 const BUNNY_PULL_ZONE_URL = "https://jordanhorsch.b-cdn.net/";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
-// Immutable Deterministic ID Generator
+// Safe Deterministic ID Generator: Prevents double-prefixing IDs on sync
 const getDeterministicId = (filenameOrUrl) => {
   if (!filenameOrUrl) return '';
-  const filename = filenameOrUrl.split('/').pop().split('?')[0];
+  const str = String(filenameOrUrl);
+  if (str.startsWith('vid-') || str.startsWith('vid_')) {
+    return str.replace(/^vid_/, 'vid-');
+  }
+  const filename = str.split('/').pop().split('?')[0];
   const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
   return 'vid-' + decodeURIComponent(nameWithoutExt).toLowerCase().replace(/[^a-z0-9]/g, '_');
 };
@@ -243,7 +248,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Fixed ID Matching)
   useEffect(() => {
     if (!isDbLoaded) return;
 
