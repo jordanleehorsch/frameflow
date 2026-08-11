@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v2.6",
-  title: "Auto-Prioritize 'Changes Requested' Videos",
-  description: "Videos with 'Changes Requested' status automatically jump to the top of your Recents list on the home dashboard for instant visibility!"
+  version: "v2.7",
+  title: "Automatic Direct Video Download",
+  description: "Clicking the Download button now triggers an immediate file download directly to your device without opening new browser windows!"
 };
 
 // Safe Deterministic ID Generator
@@ -74,6 +74,7 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#EF4444');
@@ -273,7 +274,6 @@ export default function App() {
           });
         });
 
-        // Respect saved cloudDb video ordering (so top video positions sync across devices)
         const mergedVideoList = [];
         if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
           cloudDb.videos.forEach(cv => {
@@ -284,7 +284,6 @@ export default function App() {
             }
           });
         }
-        // Append any remaining files from Bunny CDN
         bunnyVideoMap.forEach(v => mergedVideoList.push(v));
 
         setVideos(mergedVideoList);
@@ -492,6 +491,36 @@ export default function App() {
     }
   };
 
+  // 📥 DIRECT BLOB DOWNLOAD HANDLER (Bypasses Cross-Origin Browser Blocks)
+  const handleDownloadVideo = async (e) => {
+    if (e) e.stopPropagation();
+    if (!activeVideo?.url) return;
+
+    setIsDownloading(true);
+    try {
+      const res = await fetch(activeVideo.url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const downloadFileName = activeVideo.title 
+        ? `${activeVideo.title.replace(/[^a-zA-Z0-9_-]/g, "_")}.mp4`
+        : activeVideo.url.split('/').pop().split('?')[0] || 'video.mp4';
+
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = downloadFileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error("Direct download failed, falling back to new window:", err);
+      window.open(activeVideo.url, '_blank');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const handleDeleteVideo = async (videoIdToDelete, e) => {
     if (e) e.stopPropagation();
     const videoToDelete = videos.find(v => v.id === videoIdToDelete);
@@ -584,7 +613,6 @@ export default function App() {
     return filename.replace(/\.[^/.]+$/, "");
   };
 
-  // Status update moves video to top if "Changes Requested"
   const handleUpdateStatus = (status) => {
     let updatedVideos;
     if (status === 'Changes Requested') {
@@ -670,7 +698,6 @@ export default function App() {
     renderCanvas();
   };
 
-  // Stop Drawing: Promotes video to top with Changes Requested
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
@@ -726,7 +753,6 @@ export default function App() {
 
       setComments(nextComments);
 
-      // Move video to top and update status to Changes Requested
       const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
       setVideos(updatedVideos);
 
@@ -800,7 +826,6 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
-  // Comment Handler: Promotes video to top with Changes Requested
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -857,7 +882,6 @@ export default function App() {
     setComments(nextComments);
     setCommentText('');
 
-    // Move video to top and update status to Changes Requested
     const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
 
@@ -1411,15 +1435,18 @@ export default function App() {
                   <Share2 size={12} /> Share
                 </button>
 
-                <a 
-                  href={activeVideo?.url} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  download 
-                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                <button 
+                  onClick={handleDownloadVideo}
+                  disabled={isDownloading}
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition disabled:opacity-50"
+                  title="Direct Video Download"
                 >
-                  <Download size={12} />
-                </a>
+                  {isDownloading ? (
+                    <Loader2 size={12} className="animate-spin text-indigo-400" />
+                  ) : (
+                    <Download size={12} />
+                  )}
+                </button>
 
                 <button 
                   onClick={() => {
