@@ -3,7 +3,7 @@ import {
   Play, Pause, Volume2, VolumeX, Maximize, Pencil, MessageSquare, 
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
-  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell
+  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo
 } from 'lucide-react';
 
 // ==========================================
@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v1.7",
-  title: "Prevented Mobile Input Auto-Zoom",
-  description: "Feedback and input fields now use 16px font on mobile devices to stop mobile browsers from auto-zooming when typing."
+  version: "v1.8",
+  title: "Comment Deletion, Drawing Undo & Direct Touch-Tracking",
+  description: "You can now delete comments and undo drawing strokes! Pencil sizes are larger for mobile screens and track precisely under your finger."
 };
 
 // Safe Deterministic ID Generator: Prevents double-prefixing IDs on sync
@@ -67,9 +67,10 @@ export default function App() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
 
+  // Drawing State (Default stroke width increased to 8px for mobile)
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#EF4444');
-  const [strokeWidth, setStrokeWidth] = useState(4);
+  const [strokeWidth, setStrokeWidth] = useState(8);
   const [drawings, setDrawings] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('frameflow_drawings') || '{}');
@@ -535,15 +536,53 @@ export default function App() {
     setCurrentView('review');
   };
 
+  // 🎯 ACCURATE TOUCH & MOUSE CANVAS COORDINATE CALCULATOR
+  // Handles letterboxing/pillarboxing scaling so drawing tracks directly under finger
   const getCanvasCoordinates = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    let clientX = e.clientX;
+    let clientY = e.clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+    }
+
+    const elementWidth = rect.width;
+    const elementHeight = rect.height;
+    const nativeWidth = canvas.width;
+    const nativeHeight = canvas.height;
+
+    if (elementWidth === 0 || elementHeight === 0) return { x: 0, y: 0 };
+
+    const elementRatio = elementWidth / elementHeight;
+    const nativeRatio = nativeWidth / nativeHeight;
+
+    let renderWidth, renderHeight, offsetX, offsetY;
+
+    if (elementRatio > nativeRatio) {
+      renderHeight = elementHeight;
+      renderWidth = elementHeight * nativeRatio;
+      offsetX = (elementWidth - renderWidth) / 2;
+      offsetY = 0;
+    } else {
+      renderWidth = elementWidth;
+      renderHeight = elementWidth / nativeRatio;
+      offsetX = 0;
+      offsetY = (elementHeight - renderHeight) / 2;
+    }
+
+    const clickX = clientX - rect.left - offsetX;
+    const clickY = clientY - rect.top - offsetY;
+
     return {
-      x: (clientX - rect.left) * (canvas.width / rect.width),
-      y: (clientY - rect.top) * (canvas.height / rect.height)
+      x: Math.max(0, Math.min(nativeWidth, (clickX / renderWidth) * nativeWidth)),
+      y: Math.max(0, Math.min(nativeHeight, (clickY / renderHeight) * nativeHeight))
     };
   };
 
@@ -627,6 +666,40 @@ export default function App() {
     setCurrentPath([]);
   };
 
+  // ↩️ UNDO LAST DRAWING STROKE
+  const handleUndoDrawing = () => {
+    if (!activeVideo) return;
+    const targetVidId = activeVideo.id;
+    const timeKey = currentTime.toFixed(1);
+    const currentFrameDrawings = drawings[targetVidId]?.[timeKey] || [];
+
+    if (currentFrameDrawings.length === 0) return;
+
+    const updatedFrameDrawings = currentFrameDrawings.slice(0, -1);
+    
+    const nextDrawings = {
+      ...drawings,
+      [targetVidId]: {
+        ...(drawings[targetVidId] || {}),
+        [timeKey]: updatedFrameDrawings
+      }
+    };
+
+    let nextComments = comments;
+    if (updatedFrameDrawings.length === 0) {
+      nextComments = comments.map(c => {
+        if (c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey) {
+          return { ...c, hasDrawing: false };
+        }
+        return c;
+      }).filter(c => !(c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.text === 'Canvas markup / drawing annotation added'));
+    }
+
+    setDrawings(nextDrawings);
+    setComments(nextComments);
+    saveCloudDatabaseDirect(videos, nextDrawings, nextComments);
+  };
+
   const renderCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas || !activeVideo) return;
@@ -641,7 +714,7 @@ export default function App() {
       if (!path.points || path.points.length < 2) return;
       ctx.beginPath();
       ctx.strokeStyle = path.color;
-      ctx.lineWidth = path.width;
+      ctx.lineWidth = path.width || 8;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.moveTo(path.points[0].x, path.points[0].y);
@@ -722,6 +795,17 @@ export default function App() {
 
   const toggleCommentComplete = (id) => {
     const updatedComments = comments.map(c => c.id === id ? { ...c, completed: !c.completed } : c);
+    setComments(updatedComments);
+    try {
+      localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
+    } catch(e) {}
+    saveCloudDatabaseDirect(videos, drawings, updatedComments);
+  };
+
+  // 🗑️ DELETE COMMENT HANDLER
+  const handleDeleteComment = (commentId, e) => {
+    if (e) e.stopPropagation();
+    const updatedComments = comments.filter(c => c.id !== commentId);
     setComments(updatedComments);
     try {
       localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
@@ -939,7 +1023,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Brand Workspace Filters (16px Font on Mobile to Stop Auto-Zoom) */}
           <div className="px-3 py-2 md:px-4 md:py-3 border-t border-slate-800/80">
             <label className="text-[10px] md:text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 md:mb-2 block">Brand Workspace</label>
             <select 
@@ -967,7 +1050,6 @@ export default function App() {
       {currentView === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950">
           
-          {/* Top Search Bar & Mobile Folder Dropdown (16px Font to Stop Auto-Zoom) */}
           <div className="h-auto md:h-16 border-b border-slate-800 p-3 md:px-8 flex flex-col sm:flex-row items-center justify-between bg-slate-900/40 sticky top-0 backdrop-blur z-20 gap-2 sm:gap-4">
             <div className="flex items-center gap-2 w-full max-w-lg">
               <div className="relative flex-1">
@@ -981,7 +1063,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Folder Selector Dropdown in Navigation */}
               <select 
                 value={selectedBrand} 
                 onChange={(e) => setSelectedBrand(e.target.value)}
@@ -1002,7 +1083,6 @@ export default function App() {
 
           <div className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
             
-            {/* 📢 FRONT-PAGE UPDATE ANNOUNCEMENT BANNER */}
             {showUpdateBanner && (
               <div className="bg-indigo-950/80 border border-indigo-500/40 rounded-xl p-4 flex items-start justify-between gap-3 text-xs shadow-lg relative overflow-hidden">
                 <div className="flex items-start gap-3">
@@ -1275,7 +1355,8 @@ export default function App() {
                   }`}
                 />
 
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1 rounded-lg shadow-lg z-20">
+                {/* DRAWING TOOLBAR OVERLAY WITH UNDO & STROKE SIZE SELECTOR */}
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1.5 rounded-lg shadow-lg z-20">
                   <button
                     onClick={() => setIsDrawingMode(!isDrawingMode)}
                     className={`p-1.5 rounded transition ${
@@ -1289,6 +1370,34 @@ export default function App() {
                   {isDrawingMode && (
                     <>
                       <div className="h-3 w-px bg-slate-700 mx-0.5" />
+
+                      {/* ↩️ UNDO STROKE BUTTON */}
+                      <button
+                        onClick={handleUndoDrawing}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition"
+                        title="Undo last drawing stroke"
+                      >
+                        <Undo size={15} />
+                      </button>
+
+                      <div className="h-3 w-px bg-slate-700 mx-0.5" />
+
+                      {/* ✏️ STROKE SIZE SELECTOR (S / M / L) */}
+                      {[4, 8, 14].map(w => (
+                        <button
+                          key={w}
+                          onClick={() => setStrokeWidth(w)}
+                          className={`px-1.5 py-0.5 text-[10px] font-mono rounded font-bold transition ${
+                            strokeWidth === w ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800'
+                          }`}
+                          title={`Line width ${w}px`}
+                        >
+                          {w === 4 ? 'S' : w === 8 ? 'M' : 'L'}
+                        </button>
+                      ))}
+
+                      <div className="h-3 w-px bg-slate-700 mx-0.5" />
+
                       {['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#FFFFFF'].map(color => (
                         <button
                           key={color}
@@ -1422,7 +1531,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* INPUT FORM (16px Font on Mobile Prevents Auto-Zoom) */}
+            {/* INPUT FORM */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
@@ -1488,6 +1597,15 @@ export default function App() {
                         }`}
                       >
                         <Check size={11} /> {c.completed ? 'Resolved' : 'Mark Resolved'}
+                      </button>
+
+                      {/* 🗑️ DELETE COMMENT BUTTON */}
+                      <button 
+                        onClick={(e) => handleDeleteComment(c.id, e)}
+                        className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-red-400 transition"
+                        title="Delete Comment"
+                      >
+                        <Trash2 size={11} /> Delete
                       </button>
                     </div>
                   </div>
