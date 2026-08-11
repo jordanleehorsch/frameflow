@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v1.5",
-  title: "Mobile Folder Filtering & Comment-Drawing Merging",
-  description: "Brand workspace folders are now available on mobile! Canvas markups and text feedback on the same keyframe now merge automatically."
+  version: "v1.6",
+  title: "Real-Time Mobile Sync & Clean UI",
+  description: "Clicking any video thumbnail opens the review studio directly. Video folder assignments and new uploads now sync across all devices in real time!"
 };
 
 // Safe Deterministic ID Generator: Prevents double-prefixing IDs on sync
@@ -259,7 +259,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Full Video Folder & Metadata Sync)
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -271,28 +271,49 @@ export default function App() {
         if (res.ok) {
           const cloudDb = await res.json();
 
+          // Sync Video Folders, Titles, Statuses, and New Uploads in Real Time
           if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
             setVideos(prevVideos => {
-              let hasChange = false;
-              const updated = prevVideos.map(v => {
-                const cloudVid = cloudDb.videos.find(cv => cv.id === v.id || getDeterministicId(cv.url) === v.id);
-                if (cloudVid) {
-                  const newTitle = cloudVid.title || v.title;
-                  const newBrand = cloudVid.brand || v.brand;
-                  const newStatus = cloudVid.status || v.status;
-                  const newUrl = cloudVid.url || v.url;
+              const vidMap = new Map();
+              prevVideos.forEach(v => vidMap.set(v.id, v));
 
-                  if (v.title !== newTitle || v.brand !== newBrand || v.status !== newStatus || v.url !== newUrl) {
+              let hasChange = false;
+
+              cloudDb.videos.forEach(cv => {
+                const normId = getDeterministicId(cv.id || cv.url);
+                if (normId) {
+                  const existing = vidMap.get(normId);
+                  if (existing) {
+                    const newTitle = cv.title || existing.title;
+                    const newBrand = cv.brand || existing.brand;
+                    const newStatus = cv.status || existing.status;
+                    const newUrl = cv.url || existing.url;
+
+                    if (existing.title !== newTitle || existing.brand !== newBrand || existing.status !== newStatus || existing.url !== newUrl) {
+                      hasChange = true;
+                      vidMap.set(normId, { ...existing, title: newTitle, brand: newBrand, status: newStatus, url: newUrl });
+                    }
+                  } else {
+                    // New video uploaded from another device!
                     hasChange = true;
-                    return { ...v, title: newTitle, brand: newBrand, status: newStatus, url: newUrl };
+                    vidMap.set(normId, {
+                      id: normId,
+                      title: cv.title || 'Untitled Video',
+                      brand: cv.brand || 'Thrive',
+                      url: cv.url,
+                      status: cv.status || 'In Review',
+                      createdAt: cv.createdAt || new Date().toISOString(),
+                      duration: cv.duration || 30
+                    });
                   }
                 }
-                return v;
               });
-              return hasChange ? updated : prevVideos;
+
+              return hasChange ? Array.from(vidMap.values()) : prevVideos;
             });
           }
 
+          // Sync Comments in Real Time
           if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
             setComments(prevComments => {
               const commentMap = new Map();
@@ -311,6 +332,7 @@ export default function App() {
             });
           }
 
+          // Sync Drawings in Real Time
           if (cloudDb.drawings) {
             setDrawings(prevDrawings => {
               const merged = { ...prevDrawings };
@@ -760,6 +782,7 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
+  // Replace Video Handler: Deletes old file from Bunny CDN and updates in place!
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!newVideoUrl) {
@@ -911,7 +934,7 @@ export default function App() {
           <div className="p-2 md:p-3 flex md:flex-col gap-1">
             <button 
               onClick={() => setCurrentView('dashboard')}
-              className={`flex-1 md:w-full flex items-center justify-center md:justify-start gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
+              className={`w-full flex items-center justify-center md:justify-start gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
                 currentView === 'dashboard' 
                   ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
@@ -919,27 +942,9 @@ export default function App() {
             >
               <Home size={15} /> Home
             </button>
-
-            <button 
-              onClick={() => {
-                if (videos.length > 0) {
-                  if (!activeVideoId) setActiveVideoId(videos[0].id);
-                  setCurrentView('review');
-                } else {
-                  setIsUploadOpen(true);
-                }
-              }}
-              className={`flex-1 md:w-full flex items-center justify-center md:justify-start gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
-                currentView === 'review' 
-                  ? 'bg-indigo-600 text-white shadow-md' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-              }`}
-            >
-              <Video size={15} /> Review Player
-            </button>
           </div>
 
-          {/* Brand Workspace Filters (Now Mobile Accessible) */}
+          {/* Brand Workspace Filters (Mobile + Desktop) */}
           <div className="px-3 py-2 md:px-4 md:py-3 border-t border-slate-800/80">
             <label className="text-[10px] md:text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 md:mb-2 block">Brand Workspace</label>
             <select 
