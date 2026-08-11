@@ -517,7 +517,6 @@ export default function App() {
     renderCanvas();
   };
 
-  // Stop Drawing: Merges drawing flag into existing comment if one exists
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
@@ -549,13 +548,11 @@ export default function App() {
       );
 
       if (existingCommentIndex !== -1) {
-        // Flag existing comment as having a drawing
         nextComments[existingCommentIndex] = {
           ...nextComments[existingCommentIndex],
           hasDrawing: true
         };
       } else {
-        // Create a single placeholder comment entry for the drawing
         const newComment = {
           id: 'c-' + Date.now(),
           videoId: targetVidId,
@@ -609,7 +606,6 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
-  // Comment Handlers: Replaces placeholder drawing comment if user types text at the same timecode
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -626,7 +622,6 @@ export default function App() {
     );
 
     if (placeholderIndex !== -1) {
-      // Replace generic placeholder with actual user comment text
       nextComments[placeholderIndex] = {
         ...nextComments[placeholderIndex],
         author: authorName,
@@ -634,7 +629,6 @@ export default function App() {
         hasDrawing: true
       };
     } else {
-      // Check if a comment already exists at this exact frame to merge, or add a new one
       const existingFrameCommentIndex = nextComments.findIndex(
         c => c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey
       );
@@ -794,14 +788,12 @@ export default function App() {
   const targetVidId = activeVideo?.id || activeVideoId;
   const allVideoComments = comments.filter(c => c.videoId === targetVidId);
 
-  // Filter comments based on active tab selection
   const filteredComments = allVideoComments.filter(c => {
     if (commentFilter === 'unresolved') return !c.completed;
     if (commentFilter === 'resolved') return c.completed;
     return true;
   });
 
-  // Sort comments based on selected dropdown option (Default: Timecode)
   const sortedComments = [...filteredComments].sort((a, b) => {
     if (commentSort === 'timestamp') {
       return (a.timestamp || 0) - (b.timestamp || 0);
@@ -940,7 +932,7 @@ export default function App() {
                       className="group bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30 relative"
                     >
                       <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
-                        <video src={vid.url} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                        <video src={vid.url} playsInline className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
                         <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition" />
                         
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
@@ -1131,6 +1123,7 @@ export default function App() {
                 <video
                   ref={videoRef}
                   src={activeVideo?.url}
+                  playsInline
                   className="max-h-[60vh] lg:max-h-[70vh] w-full object-contain"
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                   onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
@@ -1266,7 +1259,6 @@ export default function App() {
                   <MessageSquare size={14} /> Comments ({filteredComments.length})
                 </h2>
 
-                {/* SORT BY DROPDOWN (Default: Timecode) */}
                 <div className="flex items-center gap-1">
                   <ArrowUpDown size={12} className="text-slate-400" />
                   <select
@@ -1360,7 +1352,6 @@ export default function App() {
                     </div>
                     <p className="text-xs text-slate-200">{c.text}</p>
                     
-                    {/* DRAWING BADGE ATTACHED DIRECTLY TO THIS COMMENT */}
                     {c.hasDrawing && (
                       <div className="mt-2 flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/40 border border-amber-800/50 px-2 py-0.5 rounded-md w-fit font-medium">
                         <Pencil size={11} /> Drawing Markup Attached
