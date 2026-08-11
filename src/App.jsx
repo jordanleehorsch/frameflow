@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v2.1",
-  title: "Author-Specific Drawing Attribution & Sync Fix",
-  description: "Drawings are now strictly linked to the reviewer who created them. Auto-save echo loops have been prevented so desktop never overwrites mobile comments."
+  version: "v2.2",
+  title: "Synchronized Comment & Drawing Deletion",
+  description: "Deleting a comment now automatically clears any attached canvas markups from the video screen at that keyframe."
 };
 
 // Safe Deterministic ID Generator
@@ -48,7 +48,7 @@ export default function App() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoadRef = useRef(true);
-  const isRemoteSyncRef = useRef(false); // Guard against auto-save loops on background poll
+  const isRemoteSyncRef = useRef(false);
 
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
 
@@ -272,7 +272,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (With Echo-Save Block Guard)
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -369,7 +369,7 @@ export default function App() {
     return () => clearInterval(liveSyncInterval);
   }, [isDbLoaded, isSyncing]);
 
-  // 3. AUTO-SAVE ON STATE CHANGE (Bypasses Remote Poll Updates)
+  // 3. AUTO-SAVE ON STATE CHANGE
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
 
@@ -626,7 +626,6 @@ export default function App() {
     renderCanvas();
   };
 
-  // Stop Drawing: Records drawing author and tags ONLY the matching reviewer's comment
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
@@ -636,7 +635,7 @@ export default function App() {
 
       const newPathObj = {
         id: 'path-' + Date.now(),
-        author: authorName, // <--- RECORD DRAWING AUTHOR
+        author: authorName,
         color: strokeColor,
         width: strokeWidth,
         points: currentPath
@@ -690,7 +689,7 @@ export default function App() {
     setCurrentPath([]);
   };
 
-  // ↩️ UNDO LAST DRAWING STROKE (Filters by Author)
+  // ↩️ UNDO LAST DRAWING STROKE
   const handleUndoDrawing = () => {
     if (!activeVideo) return;
     const targetVidId = activeVideo.id;
@@ -755,7 +754,6 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
-  // Comment Handlers: Only tags drawing if created by THIS SAME author
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -832,15 +830,47 @@ export default function App() {
     saveCloudDatabaseDirect(videos, drawings, updatedComments);
   };
 
-  // 🗑️ DELETE COMMENT HANDLER
+  // 🗑️ DELETE COMMENT & CANVAS MARKUP SYNCHRONIZED HANDLER
   const handleDeleteComment = async (commentId, e) => {
     if (e) e.stopPropagation();
+
+    const commentToDelete = comments.find(c => c.id === commentId);
     const updatedComments = comments.filter(c => c.id !== commentId);
+
+    let nextDrawings = { ...drawings };
+
+    if (commentToDelete) {
+      const vidId = commentToDelete.videoId;
+      const timeKey = commentToDelete.timestamp.toFixed(1);
+
+      if (nextDrawings[vidId]?.[timeKey]) {
+        // Remove drawings created by this comment's author
+        const remainingStrokes = nextDrawings[vidId][timeKey].filter(
+          d => d.author ? d.author !== commentToDelete.author : false
+        );
+
+        if (remainingStrokes.length > 0) {
+          nextDrawings[vidId] = {
+            ...nextDrawings[vidId],
+            [timeKey]: remainingStrokes
+          };
+        } else {
+          const updatedVidDrawings = { ...nextDrawings[vidId] };
+          delete updatedVidDrawings[timeKey];
+          nextDrawings[vidId] = updatedVidDrawings;
+        }
+      }
+    }
+
     setComments(updatedComments);
+    setDrawings(nextDrawings);
+
     try {
       localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
+      localStorage.setItem('frameflow_drawings', JSON.stringify(nextDrawings));
     } catch(e) {}
-    await saveCloudDatabaseDirect(videos, drawings, updatedComments);
+
+    await saveCloudDatabaseDirect(videos, nextDrawings, updatedComments);
   };
 
   const handleFileSelect = async (e) => {
@@ -1558,7 +1588,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* INPUT FORM (Reviewer Name Saves per Device) */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
