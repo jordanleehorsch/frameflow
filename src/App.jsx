@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v2.2",
-  title: "Synchronized Comment & Drawing Deletion",
-  description: "Deleting a comment now automatically clears any attached canvas markups from the video screen at that keyframe."
+  version: "v2.3",
+  title: "Auto-Resolve Comments & Clear Markups on Replace",
+  description: "Replacing a video now automatically moves previous comments into the Resolved tab and removes old canvas markups for a clean review on the new cut!"
 };
 
 // Safe Deterministic ID Generator
@@ -844,7 +844,6 @@ export default function App() {
       const timeKey = commentToDelete.timestamp.toFixed(1);
 
       if (nextDrawings[vidId]?.[timeKey]) {
-        // Remove drawings created by this comment's author
         const remainingStrokes = nextDrawings[vidId][timeKey].filter(
           d => d.author ? d.author !== commentToDelete.author : false
         );
@@ -922,6 +921,7 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
+  // 🔄 REPLACE VIDEO HANDLER: AUTO-RESOLVES PREVIOUS COMMENTS & CLEARS OLD MARKUPS
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!newVideoUrl) {
@@ -935,6 +935,7 @@ export default function App() {
     const newId = getDeterministicId(newVideoUrl) || oldId;
     const oldVideo = videos.find(v => v.id === oldId);
 
+    // 1. Delete old file from Bunny CDN storage
     if (oldVideo && oldVideo.url && oldVideo.url !== newVideoUrl) {
       try {
         const oldFileName = oldVideo.url.split('/').pop();
@@ -950,6 +951,7 @@ export default function App() {
       }
     }
 
+    // 2. Update existing video object in place
     const updatedVideos = videos.map(v => {
       if (v.id === oldId) {
         return {
@@ -962,16 +964,21 @@ export default function App() {
       return v;
     });
 
+    // 3. REMOVE ALL CANVAS MARKUPS FOR THIS VIDEO
     let nextDrawings = { ...drawings };
-    if (oldId !== newId && drawings[oldId]) {
-      nextDrawings[newId] = { ...(nextDrawings[newId] || {}), ...drawings[oldId] };
-      delete nextDrawings[oldId];
-      setDrawings(nextDrawings);
-    }
+    delete nextDrawings[oldId];
+    delete nextDrawings[newId];
+    setDrawings(nextDrawings);
 
+    // 4. MOVE PREVIOUS COMMENTS TO RESOLVED TAB (and remove drawing badges)
     let nextComments = comments.map(c => {
-      if (c.videoId === oldId) {
-        return { ...c, videoId: newId };
+      if (c.videoId === oldId || c.videoId === newId) {
+        return { 
+          ...c, 
+          videoId: newId, 
+          completed: true, 
+          hasDrawing: false 
+        };
       }
       return c;
     });
