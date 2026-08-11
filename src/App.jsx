@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v1.6",
-  title: "Real-Time Mobile Sync & Clean UI",
-  description: "Clicking any video thumbnail opens the review studio directly. Video folder assignments and new uploads now sync across all devices in real time!"
+  version: "v1.7",
+  title: "Prevented Mobile Input Auto-Zoom",
+  description: "Feedback and input fields now use 16px font on mobile devices to stop mobile browsers from auto-zooming when typing."
 };
 
 // Safe Deterministic ID Generator: Prevents double-prefixing IDs on sync
@@ -259,7 +259,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Full Video Folder & Metadata Sync)
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -271,7 +271,6 @@ export default function App() {
         if (res.ok) {
           const cloudDb = await res.json();
 
-          // Sync Video Folders, Titles, Statuses, and New Uploads in Real Time
           if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
             setVideos(prevVideos => {
               const vidMap = new Map();
@@ -294,7 +293,6 @@ export default function App() {
                       vidMap.set(normId, { ...existing, title: newTitle, brand: newBrand, status: newStatus, url: newUrl });
                     }
                   } else {
-                    // New video uploaded from another device!
                     hasChange = true;
                     vidMap.set(normId, {
                       id: normId,
@@ -313,7 +311,6 @@ export default function App() {
             });
           }
 
-          // Sync Comments in Real Time
           if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
             setComments(prevComments => {
               const commentMap = new Map();
@@ -332,7 +329,6 @@ export default function App() {
             });
           }
 
-          // Sync Drawings in Real Time
           if (cloudDb.drawings) {
             setDrawings(prevDrawings => {
               const merged = { ...prevDrawings };
@@ -782,7 +778,6 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
-  // Replace Video Handler: Deletes old file from Bunny CDN and updates in place!
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!newVideoUrl) {
@@ -910,7 +905,7 @@ export default function App() {
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
-      {/* GLOBAL SIDEBAR (Supports Mobile + Desktop) */}
+      {/* GLOBAL SIDEBAR */}
       <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
           <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between">
@@ -944,13 +939,13 @@ export default function App() {
             </button>
           </div>
 
-          {/* Brand Workspace Filters (Mobile + Desktop) */}
+          {/* Brand Workspace Filters (16px Font on Mobile to Stop Auto-Zoom) */}
           <div className="px-3 py-2 md:px-4 md:py-3 border-t border-slate-800/80">
             <label className="text-[10px] md:text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 md:mb-2 block">Brand Workspace</label>
             <select 
               value={selectedBrand} 
               onChange={(e) => setSelectedBrand(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-[16px] md:text-xs rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
             >
               <option value="All">All Concepts ({videos.length})</option>
               {brands.map(b => <option key={b} value={b}>{b}</option>)}
@@ -972,7 +967,7 @@ export default function App() {
       {currentView === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950">
           
-          {/* Top Search Bar & Mobile Folder Dropdown */}
+          {/* Top Search Bar & Mobile Folder Dropdown (16px Font to Stop Auto-Zoom) */}
           <div className="h-auto md:h-16 border-b border-slate-800 p-3 md:px-8 flex flex-col sm:flex-row items-center justify-between bg-slate-900/40 sticky top-0 backdrop-blur z-20 gap-2 sm:gap-4">
             <div className="flex items-center gap-2 w-full max-w-lg">
               <div className="relative flex-1">
@@ -982,15 +977,15 @@ export default function App() {
                   placeholder="Search videos, brands..." 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-[16px] md:text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
                 />
               </div>
 
-              {/* Folder Selector Dropdown in Sticky Navigation */}
+              {/* Folder Selector Dropdown in Navigation */}
               <select 
                 value={selectedBrand} 
                 onChange={(e) => setSelectedBrand(e.target.value)}
-                className="bg-slate-900 border border-slate-800 text-indigo-300 text-xs rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium"
+                className="bg-slate-900 border border-slate-800 text-indigo-300 text-[16px] md:text-xs rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium"
               >
                 <option value="All">All Folders</option>
                 {brands.map(b => <option key={b} value={b}>{b}</option>)}
@@ -1087,7 +1082,7 @@ export default function App() {
                                 onChange={(e) => setTempTitleText(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && saveRenameVideo(vid.id, e)}
                                 autoFocus
-                                className="w-full bg-slate-800 border border-indigo-500 rounded text-xs px-1.5 py-0.5 text-white focus:outline-none"
+                                className="w-full bg-slate-800 border border-indigo-500 rounded text-[16px] md:text-xs px-1.5 py-0.5 text-white focus:outline-none"
                               />
                               <button onClick={(e) => saveRenameVideo(vid.id, e)} className="text-emerald-400 p-0.5 hover:bg-slate-800 rounded">
                                 <Check size={14} />
@@ -1113,7 +1108,7 @@ export default function App() {
                               value={vid.brand}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => handleUpdateBrand(vid.id, e.target.value, e)}
-                              className="text-[10px] bg-slate-800 border border-slate-700/80 text-indigo-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium hover:bg-slate-700 transition"
+                              className="text-[16px] md:text-[10px] bg-slate-800 border border-slate-700/80 text-indigo-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium hover:bg-slate-700 transition"
                             >
                               {brands.map(b => <option key={b} value={b}>{b}</option>)}
                             </select>
@@ -1173,7 +1168,7 @@ export default function App() {
                   <select
                     value={activeVideo?.brand || 'Thrive'}
                     onChange={(e) => handleUpdateBrand(activeVideoId, e.target.value)}
-                    className="text-[11px] bg-slate-800 border border-slate-700 text-indigo-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer font-medium hover:bg-slate-700 transition"
+                    className="text-[16px] md:text-[11px] bg-slate-800 border border-slate-700 text-indigo-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer font-medium hover:bg-slate-700 transition"
                   >
                     {brands.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
@@ -1390,7 +1385,7 @@ export default function App() {
                   <select
                     value={commentSort}
                     onChange={(e) => setCommentSort(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 text-indigo-300 text-[10px] font-medium rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    className="bg-slate-950 border border-slate-800 text-indigo-300 text-[16px] md:text-[10px] font-medium rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
                   >
                     <option value="timestamp">Timecode</option>
                     <option value="newest">Newest First</option>
@@ -1427,13 +1422,14 @@ export default function App() {
               </div>
             </div>
 
+            {/* INPUT FORM (16px Font on Mobile Prevents Auto-Zoom) */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
                 placeholder="Your Name"
                 value={authorName}
                 onChange={(e) => setAuthorName(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-800 border border-slate-700 text-[16px] md:text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
               />
               <div className="flex gap-2">
                 <input 
@@ -1441,7 +1437,7 @@ export default function App() {
                   placeholder="Add feedback at frame..."
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
-                  className="flex-1 bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="flex-1 bg-slate-800 border border-slate-700 text-[16px] md:text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
                 />
                 <button 
                   type="submit"
@@ -1521,7 +1517,7 @@ export default function App() {
                   type="file" 
                   accept="video/*"
                   onChange={handleFileSelect}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-300"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-300 text-[16px] md:text-xs"
                   disabled={isUploadingToCdn}
                 />
 
@@ -1556,7 +1552,7 @@ export default function App() {
                   value={newVideoUrl}
                   onChange={(e) => setNewVideoUrl(e.target.value)}
                   placeholder="https://your-cdn-host.com/video.mp4"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 text-[16px] md:text-xs"
                 />
               </div>
 
@@ -1567,7 +1563,7 @@ export default function App() {
                   value={newVideoTitle}
                   onChange={(e) => setNewVideoTitle(e.target.value)}
                   placeholder="e.g. QDOBA_Summer_Campaign"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 text-[16px] md:text-xs"
                 />
               </div>
 
@@ -1576,7 +1572,7 @@ export default function App() {
                 <select 
                   value={newVideoBrand}
                   onChange={(e) => setNewVideoBrand(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 text-[16px] md:text-xs"
                 >
                   {brands.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
@@ -1621,7 +1617,7 @@ export default function App() {
                   type="file" 
                   accept="video/*"
                   onChange={handleFileSelect}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-300"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-300 text-[16px] md:text-xs"
                   disabled={isUploadingToCdn}
                 />
 
@@ -1656,7 +1652,7 @@ export default function App() {
                   value={newVideoUrl}
                   onChange={(e) => setNewVideoUrl(e.target.value)}
                   placeholder="https://your-cdn-host.com/video_v2.mp4"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 text-[16px] md:text-xs"
                 />
               </div>
 
@@ -1667,7 +1663,7 @@ export default function App() {
                   value={newVideoTitle}
                   onChange={(e) => setNewVideoTitle(e.target.value)}
                   placeholder="Asset Title"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 text-[16px] md:text-xs"
                 />
               </div>
 
