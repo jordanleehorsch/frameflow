@@ -74,7 +74,7 @@ export default function App() {
     } catch(e) { return []; }
   });
   const [commentFilter, setCommentFilter] = useState('unresolved');
-  const [commentSort, setCommentSort] = useState('timestamp'); // Default sort: Timecode!
+  const [commentSort, setCommentSort] = useState('timestamp'); // Default sort: Timecode
   const [commentText, setCommentText] = useState('');
   const [authorName, setAuthorName] = useState('Reviewer');
 
@@ -517,11 +517,14 @@ export default function App() {
     renderCanvas();
   };
 
+  // Stop Drawing: Merges drawing flag into existing comment if one exists
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
     if (currentPath.length > 0) {
       const targetVidId = activeVideo.id;
+      const timeKey = currentTime.toFixed(1);
+
       const newPathObj = {
         id: 'path-' + Date.now(),
         color: strokeColor,
@@ -529,7 +532,6 @@ export default function App() {
         points: currentPath
       };
       
-      const timeKey = currentTime.toFixed(1);
       const updatedVideoDrawings = [...(drawings[targetVidId]?.[timeKey] || []), newPathObj];
       
       const nextDrawings = {
@@ -541,14 +543,19 @@ export default function App() {
       };
       setDrawings(nextDrawings);
 
-      let nextComments = comments;
-      const hasExistingDrawingComment = comments.some(
-        c => c.videoId === targetVidId && 
-             c.hasDrawing && 
-             c.timestamp.toFixed(1) === timeKey
+      let nextComments = [...comments];
+      const existingCommentIndex = nextComments.findIndex(
+        c => c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey
       );
 
-      if (!hasExistingDrawingComment) {
+      if (existingCommentIndex !== -1) {
+        // Flag existing comment as having a drawing
+        nextComments[existingCommentIndex] = {
+          ...nextComments[existingCommentIndex],
+          hasDrawing: true
+        };
+      } else {
+        // Create a single placeholder comment entry for the drawing
         const newComment = {
           id: 'c-' + Date.now(),
           videoId: targetVidId,
@@ -560,9 +567,10 @@ export default function App() {
           createdAt: new Date().toISOString(),
           hasDrawing: true
         };
-        nextComments = [...comments, newComment];
-        setComments(nextComments);
+        nextComments.push(newComment);
       }
+
+      setComments(nextComments);
 
       const updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status: 'Changes Requested' } : v);
       setVideos(updatedVideos);
@@ -601,36 +609,71 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
+  // Comment Handlers: Replaces placeholder drawing comment if user types text at the same timecode
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
 
     const targetVidId = activeVideo.id;
+    const timeKey = currentTime.toFixed(1);
+    const hasDrawingAtFrame = (drawings[targetVidId]?.[timeKey] || []).length > 0;
 
-    const newComment = {
-      id: 'c-' + Date.now(),
-      videoId: targetVidId,
-      timestamp: currentTime,
-      timeFormatted: formatTime(currentTime),
-      author: authorName,
-      text: commentText.trim(),
-      completed: false,
-      createdAt: new Date().toISOString()
-    };
+    let nextComments = [...comments];
+    const placeholderIndex = nextComments.findIndex(
+      c => c.videoId === targetVidId &&
+           c.timestamp.toFixed(1) === timeKey &&
+           c.text === 'Canvas markup / drawing annotation added'
+    );
 
-    const updatedComments = [...comments, newComment];
-    setComments(updatedComments);
+    if (placeholderIndex !== -1) {
+      // Replace generic placeholder with actual user comment text
+      nextComments[placeholderIndex] = {
+        ...nextComments[placeholderIndex],
+        author: authorName,
+        text: commentText.trim(),
+        hasDrawing: true
+      };
+    } else {
+      // Check if a comment already exists at this exact frame to merge, or add a new one
+      const existingFrameCommentIndex = nextComments.findIndex(
+        c => c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey
+      );
+
+      if (existingFrameCommentIndex !== -1) {
+        nextComments[existingFrameCommentIndex] = {
+          ...nextComments[existingFrameCommentIndex],
+          author: authorName,
+          text: commentText.trim(),
+          hasDrawing: nextComments[existingFrameCommentIndex].hasDrawing || hasDrawingAtFrame
+        };
+      } else {
+        const newComment = {
+          id: 'c-' + Date.now(),
+          videoId: targetVidId,
+          timestamp: currentTime,
+          timeFormatted: formatTime(currentTime),
+          author: authorName,
+          text: commentText.trim(),
+          completed: false,
+          createdAt: new Date().toISOString(),
+          hasDrawing: hasDrawingAtFrame
+        };
+        nextComments.push(newComment);
+      }
+    }
+
+    setComments(nextComments);
     setCommentText('');
 
     const updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status: 'Changes Requested' } : v);
     setVideos(updatedVideos);
 
     try {
-      localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
+      localStorage.setItem('frameflow_comments', JSON.stringify(nextComments));
       localStorage.setItem('frameflow_videos', JSON.stringify(updatedVideos));
     } catch(e) {}
 
-    saveCloudDatabaseDirect(updatedVideos, drawings, updatedComments);
+    saveCloudDatabaseDirect(updatedVideos, drawings, nextComments);
   };
 
   const toggleCommentComplete = (id) => {
@@ -1316,6 +1359,14 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-xs text-slate-200">{c.text}</p>
+                    
+                    {/* DRAWING BADGE ATTACHED DIRECTLY TO THIS COMMENT */}
+                    {c.hasDrawing && (
+                      <div className="mt-2 flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/40 border border-amber-800/50 px-2 py-0.5 rounded-md w-fit font-medium">
+                        <Pencil size={11} /> Drawing Markup Attached
+                      </div>
+                    )}
+
                     <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-700/50">
                       <button 
                         onClick={() => toggleCommentComplete(c.id)}
