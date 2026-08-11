@@ -221,7 +221,7 @@ export default function App() {
             id: id,
             title: meta?.title || cleanTitle || filename,
             brand: meta?.brand || 'Thrive',
-            url: publicUrl,
+            url: meta?.url || publicUrl,
             status: meta?.status || 'In Review',
             createdAt: meta?.createdAt || file.LastChanged || new Date().toISOString(),
             duration: meta?.duration || 30
@@ -249,7 +249,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Syncs Comments, Drawings & Video Titles/URLs)
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -261,6 +261,30 @@ export default function App() {
         if (res.ok) {
           const cloudDb = await res.json();
 
+          // Sync Video Titles, Brands, Statuses, and Replaced URLs in Real Time
+          if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
+            setVideos(prevVideos => {
+              let hasChange = false;
+              const updated = prevVideos.map(v => {
+                const cloudVid = cloudDb.videos.find(cv => cv.id === v.id || getDeterministicId(cv.url) === v.id);
+                if (cloudVid) {
+                  const newTitle = cloudVid.title || v.title;
+                  const newBrand = cloudVid.brand || v.brand;
+                  const newStatus = cloudVid.status || v.status;
+                  const newUrl = cloudVid.url || v.url;
+
+                  if (v.title !== newTitle || v.brand !== newBrand || v.status !== newStatus || v.url !== newUrl) {
+                    hasChange = true;
+                    return { ...v, title: newTitle, brand: newBrand, status: newStatus, url: newUrl };
+                  }
+                }
+                return v;
+              });
+              return hasChange ? updated : prevVideos;
+            });
+          }
+
+          // Sync Comments in Real Time
           if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
             setComments(prevComments => {
               const commentMap = new Map();
@@ -279,6 +303,7 @@ export default function App() {
             });
           }
 
+          // Sync Drawings in Real Time
           if (cloudDb.drawings) {
             setDrawings(prevDrawings => {
               const merged = { ...prevDrawings };
@@ -726,6 +751,7 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
+  // Replace Video Handler: Migrates Video ID, Comments, and Drawings to the new video URL smoothly
   const handleReplaceSubmit = (e) => {
     e.preventDefault();
     if (!newVideoUrl) {
@@ -733,10 +759,14 @@ export default function App() {
       return;
     }
 
+    const oldId = activeVideoId;
+    const newId = getDeterministicId(newVideoUrl) || oldId;
+
     const updatedVideos = videos.map(v => {
-      if (v.id === activeVideoId) {
+      if (v.id === oldId) {
         return {
           ...v,
+          id: newId,
           title: newVideoTitle || v.title,
           url: newVideoUrl || v.url
         };
@@ -744,11 +774,29 @@ export default function App() {
       return v;
     });
 
+    // Transfer drawings to new ID
+    let nextDrawings = { ...drawings };
+    if (oldId !== newId && drawings[oldId]) {
+      nextDrawings[newId] = { ...(nextDrawings[newId] || {}), ...drawings[oldId] };
+      delete nextDrawings[oldId];
+      setDrawings(nextDrawings);
+    }
+
+    // Transfer comments to new ID
+    let nextComments = comments.map(c => {
+      if (c.videoId === oldId) {
+        return { ...c, videoId: newId };
+      }
+      return c;
+    });
+    setComments(nextComments);
+
     setVideos(updatedVideos);
+    setActiveVideoId(newId);
     setIsReplaceOpen(false);
     resetUploadForm();
 
-    saveCloudDatabaseDirect(updatedVideos, drawings, comments);
+    saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments);
   };
 
   const resetUploadForm = () => {
