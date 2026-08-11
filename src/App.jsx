@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v2.0",
-  title: "Multi-Reviewer Isolation & Persistent Device Names",
-  description: "Reviewer names now save per-device automatically! Comments at the same timestamp from different reviewers will no longer overwrite each other."
+  version: "v2.1",
+  title: "Author-Specific Drawing Attribution & Sync Fix",
+  description: "Drawings are now strictly linked to the reviewer who created them. Auto-save echo loops have been prevented so desktop never overwrites mobile comments."
 };
 
 // Safe Deterministic ID Generator
@@ -48,6 +48,7 @@ export default function App() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoadRef = useRef(true);
+  const isRemoteSyncRef = useRef(false); // Guard against auto-save loops on background poll
 
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
 
@@ -86,7 +87,7 @@ export default function App() {
   const [commentSort, setCommentSort] = useState('timestamp');
   const [commentText, setCommentText] = useState('');
 
-  // 💾 DEVICE-SPECIFIC REVIEWER NAME (Persisted in localStorage)
+  // 💾 DEVICE-SPECIFIC REVIEWER NAME
   const [authorName, setAuthorName] = useState(() => {
     try {
       return localStorage.getItem('frameflow_author_name') || 'Reviewer';
@@ -271,7 +272,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (With Echo-Save Block Guard)
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -282,6 +283,7 @@ export default function App() {
         const res = await fetch('/api/db');
         if (res.ok) {
           const cloudDb = await res.json();
+          let stateUpdated = false;
 
           if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
             const normalizedCloudComments = cloudDb.comments.map(c => ({
@@ -291,6 +293,7 @@ export default function App() {
 
             setComments(prevComments => {
               if (JSON.stringify(prevComments) !== JSON.stringify(normalizedCloudComments)) {
+                stateUpdated = true;
                 return normalizedCloudComments;
               }
               return prevComments;
@@ -305,6 +308,7 @@ export default function App() {
                 normalizedDrawings[normKey] = cloudDb.drawings[vidKey];
               });
               if (JSON.stringify(prevDrawings) !== JSON.stringify(normalizedDrawings)) {
+                stateUpdated = true;
                 return normalizedDrawings;
               }
               return prevDrawings;
@@ -347,8 +351,16 @@ export default function App() {
                 }
               });
 
-              return hasChange ? Array.from(vidMap.values()) : prevVideos;
+              if (hasChange) {
+                stateUpdated = true;
+                return Array.from(vidMap.values());
+              }
+              return prevVideos;
             });
+          }
+
+          if (stateUpdated) {
+            isRemoteSyncRef.current = true;
           }
         }
       } catch (e) {}
@@ -357,9 +369,14 @@ export default function App() {
     return () => clearInterval(liveSyncInterval);
   }, [isDbLoaded, isSyncing]);
 
-  // 3. AUTO-SAVE ON STATE CHANGE
+  // 3. AUTO-SAVE ON STATE CHANGE (Bypasses Remote Poll Updates)
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
+
+    if (isRemoteSyncRef.current) {
+      isRemoteSyncRef.current = false;
+      return;
+    }
 
     const debounceSync = setTimeout(() => {
       saveCloudDatabaseDirect(videos, drawings, comments);
@@ -609,7 +626,7 @@ export default function App() {
     renderCanvas();
   };
 
-  // Stop Drawing: Only merges drawing flag if it's the SAME author at that timestamp
+  // Stop Drawing: Records drawing author and tags ONLY the matching reviewer's comment
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
@@ -619,6 +636,7 @@ export default function App() {
 
       const newPathObj = {
         id: 'path-' + Date.now(),
+        author: authorName, // <--- RECORD DRAWING AUTHOR
         color: strokeColor,
         width: strokeWidth,
         points: currentPath
@@ -672,7 +690,7 @@ export default function App() {
     setCurrentPath([]);
   };
 
-  // ↩️ UNDO LAST DRAWING STROKE
+  // ↩️ UNDO LAST DRAWING STROKE (Filters by Author)
   const handleUndoDrawing = () => {
     if (!activeVideo) return;
     const targetVidId = activeVideo.id;
@@ -691,8 +709,10 @@ export default function App() {
       }
     };
 
+    const authorHasMoreDrawings = updatedFrameDrawings.some(d => (d.author ? d.author === authorName : true));
+
     let nextComments = comments;
-    if (updatedFrameDrawings.length === 0) {
+    if (!authorHasMoreDrawings) {
       nextComments = comments.map(c => {
         if (c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.author === authorName) {
           return { ...c, hasDrawing: false };
@@ -735,18 +755,18 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
-  // Comment Handlers: Only replaces placeholder or merges if it matches the SAME reviewer author name
+  // Comment Handlers: Only tags drawing if created by THIS SAME author
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
 
     const targetVidId = activeVideo.id;
     const timeKey = currentTime.toFixed(1);
-    const hasDrawingAtFrame = (drawings[targetVidId]?.[timeKey] || []).length > 0;
+    const frameDrawings = drawings[targetVidId]?.[timeKey] || [];
+    const hasAuthorDrawingAtFrame = frameDrawings.some(d => d.author ? d.author === authorName : false);
 
     let nextComments = [...comments];
 
-    // Check placeholder created by THIS SAME author
     const placeholderIndex = nextComments.findIndex(
       c => c.videoId === targetVidId &&
            c.timestamp.toFixed(1) === timeKey &&
@@ -762,7 +782,6 @@ export default function App() {
         hasDrawing: true
       };
     } else {
-      // Check if a comment by THIS SAME author exists at this frame
       const existingAuthorCommentIndex = nextComments.findIndex(
         c => c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.author === authorName
       );
@@ -772,10 +791,9 @@ export default function App() {
           ...nextComments[existingAuthorCommentIndex],
           author: authorName,
           text: commentText.trim(),
-          hasDrawing: nextComments[existingAuthorCommentIndex].hasDrawing || hasDrawingAtFrame
+          hasDrawing: nextComments[existingAuthorCommentIndex].hasDrawing || hasAuthorDrawingAtFrame
         };
       } else {
-        // Different author or new keyframe -> Always create a new comment card!
         const newComment = {
           id: 'c-' + Date.now(),
           videoId: targetVidId,
@@ -785,7 +803,7 @@ export default function App() {
           text: commentText.trim(),
           completed: false,
           createdAt: new Date().toISOString(),
-          hasDrawing: hasDrawingAtFrame
+          hasDrawing: hasAuthorDrawingAtFrame
         };
         nextComments.push(newComment);
       }
@@ -1540,7 +1558,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* INPUT FORM (Reviewer Name Saves Automatically per Device) */}
+            {/* INPUT FORM (Reviewer Name Saves per Device) */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
