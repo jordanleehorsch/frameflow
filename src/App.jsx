@@ -249,7 +249,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Syncs Comments, Drawings & Video Titles/URLs)
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -261,7 +261,6 @@ export default function App() {
         if (res.ok) {
           const cloudDb = await res.json();
 
-          // Sync Video Titles, Brands, Statuses, and Replaced URLs in Real Time
           if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
             setVideos(prevVideos => {
               let hasChange = false;
@@ -284,7 +283,6 @@ export default function App() {
             });
           }
 
-          // Sync Comments in Real Time
           if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
             setComments(prevComments => {
               const commentMap = new Map();
@@ -303,7 +301,6 @@ export default function App() {
             });
           }
 
-          // Sync Drawings in Real Time
           if (cloudDb.drawings) {
             setDrawings(prevDrawings => {
               const merged = { ...prevDrawings };
@@ -709,7 +706,10 @@ export default function App() {
     if (file) {
       setSelectedFile(file);
       const cleanName = extractFilenameWithoutExt(file.name);
-      setNewVideoTitle(cleanName);
+      // Only set title if adding new video, or if replace title is empty
+      if (!isReplaceOpen || !newVideoTitle) {
+        setNewVideoTitle(cleanName);
+      }
 
       const result = await uploadFileToBunnyCDN(file);
       if (result && result.url) {
@@ -751,17 +751,37 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
-  // Replace Video Handler: Migrates Video ID, Comments, and Drawings to the new video URL smoothly
-  const handleReplaceSubmit = (e) => {
+  // Replace Video Handler: Deletes old file from Bunny CDN and updates in place!
+  const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!newVideoUrl) {
       alert("Please select a valid video file or enter a direct URL.");
       return;
     }
 
+    setIsSyncing(true);
+
     const oldId = activeVideoId;
     const newId = getDeterministicId(newVideoUrl) || oldId;
+    const oldVideo = videos.find(v => v.id === oldId);
 
+    // 1. Delete old file from Bunny CDN storage so duplicate cards aren't generated
+    if (oldVideo && oldVideo.url && oldVideo.url !== newVideoUrl) {
+      try {
+        const oldFileName = oldVideo.url.split('/').pop();
+        if (oldFileName && oldVideo.url.includes('b-cdn.net')) {
+          const deleteUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${oldFileName}`;
+          await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: { 'AccessKey': BUNNY_ACCESS_KEY }
+          });
+        }
+      } catch (err) {
+        console.error("Error deleting old replaced file from Bunny CDN:", err);
+      }
+    }
+
+    // 2. Update existing video object in place
     const updatedVideos = videos.map(v => {
       if (v.id === oldId) {
         return {
@@ -774,7 +794,7 @@ export default function App() {
       return v;
     });
 
-    // Transfer drawings to new ID
+    // 3. Transfer drawings to new ID
     let nextDrawings = { ...drawings };
     if (oldId !== newId && drawings[oldId]) {
       nextDrawings[newId] = { ...(nextDrawings[newId] || {}), ...drawings[oldId] };
@@ -782,7 +802,7 @@ export default function App() {
       setDrawings(nextDrawings);
     }
 
-    // Transfer comments to new ID
+    // 4. Transfer comments to new ID
     let nextComments = comments.map(c => {
       if (c.videoId === oldId) {
         return { ...c, videoId: newId };
@@ -796,7 +816,8 @@ export default function App() {
     setIsReplaceOpen(false);
     resetUploadForm();
 
-    saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments);
+    await saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments);
+    setIsSyncing(false);
   };
 
   const resetUploadForm = () => {
@@ -1143,11 +1164,17 @@ export default function App() {
                   <Download size={12} />
                 </a>
 
+                {/* Pre-populates video title by default on replace */}
                 <button 
-                  onClick={() => setIsReplaceOpen(true)}
+                  onClick={() => {
+                    setNewVideoTitle(activeVideo?.title || '');
+                    setNewVideoUrl('');
+                    setUploadedFileName('');
+                    setIsReplaceOpen(true);
+                  }}
                   className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
                 >
-                  <RotateCcw size={12} />
+                  <RotateCcw size={12} /> Replace
                 </button>
 
                 <button 
