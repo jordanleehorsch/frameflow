@@ -3,7 +3,7 @@ import {
   Play, Pause, Volume2, VolumeX, Maximize, Pencil, MessageSquare, 
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
-  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical
+  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter
 } from 'lucide-react';
 
 // ==========================================
@@ -71,12 +71,13 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState([]);
   const [isMouseDown, setIsMouseDown] = useState(false);
 
-  // Comments State (Prefill from localStorage instantly)
+  // Comments State & Active Filter ('unresolved', 'resolved', 'all')
   const [comments, setComments] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('frameflow_comments') || '[]');
     } catch(e) { return []; }
   });
+  const [commentFilter, setCommentFilter] = useState('unresolved');
   const [commentText, setCommentText] = useState('');
   const [authorName, setAuthorName] = useState('Reviewer');
 
@@ -103,7 +104,7 @@ export default function App() {
   // Active Video Object
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // DIRECT CLOUD SAVE FUNCTION (Syncs directly to Bunny CDN)
+  // DIRECT CLOUD SAVE FUNCTION (Syncs directly to Bunny Storage API)
   const saveCloudDatabaseDirect = async (vList, dMap, cList) => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
@@ -112,7 +113,6 @@ export default function App() {
     const targetDrawings = dMap || drawings;
     const targetComments = cList || comments;
 
-    // Local Storage Backup First
     try {
       localStorage.setItem('frameflow_videos', JSON.stringify(targetVideos));
       localStorage.setItem('frameflow_drawings', JSON.stringify(targetDrawings));
@@ -141,7 +141,7 @@ export default function App() {
     }
   };
 
-  // 1. SCAN BUNNY CDN STORAGE DIRECTLY & MERGE DATABASE ON LAUNCH
+  // 1. INITIAL LOAD FROM BUNNY CDN ON APP START
   useEffect(() => {
     const fetchAllBunnyCloudAssets = async () => {
       setIsSyncing(true);
@@ -154,10 +154,6 @@ export default function App() {
           });
           if (res.ok) {
             cloudDb = await res.json();
-          } else {
-            const dbPublicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/frameflow_db.json?nocache=${Date.now()}`;
-            const publicRes = await fetch(dbPublicUrl);
-            if (publicRes.ok) cloudDb = await publicRes.json();
           }
         } catch (e) {
           console.warn("Reading fresh database layout...");
@@ -203,7 +199,7 @@ export default function App() {
           }
         });
 
-        // Merge Comments (Preserve local + cloud seamlessly across devices)
+        // Merge Comments across devices
         const allComments = [...(cloudDb.comments || []), ...(localDb.comments || [])];
         const commentMap = new Map();
         allComments.forEach(c => {
@@ -269,7 +265,85 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. AUTO-SAVE ON STATE CHANGE
+  // 2. ⚡ REAL-TIME CLOUD POLLING ENGINE (Heartbeat every 3 seconds for instant multi-device sync)
+  useEffect(() => {
+    if (!isDbLoaded) return;
+
+    const liveSyncInterval = setInterval(async () => {
+      // Don't poll while actively sending a local update to prevent state overwrites
+      if (isSyncing) return;
+
+      try {
+        const dbStorageUrl = `${BUNNY_STORAGE_API_URL}/frameflow_db.json?t=${Date.now()}`;
+        const res = await fetch(dbStorageUrl, {
+          headers: { 'AccessKey': BUNNY_ACCESS_KEY }
+        });
+
+        if (res.ok) {
+          const cloudDb = await res.json();
+
+          // Sync Comments in Real Time
+          if (cloudDb.comments && Array.isArray(cloudDb.comments)) {
+            setComments(prevComments => {
+              const commentMap = new Map();
+              prevComments.forEach(c => commentMap.set(c.id, c));
+              cloudDb.comments.forEach(c => {
+                if (c && c.id) {
+                  const normVidId = getDeterministicId(c.videoId);
+                  commentMap.set(c.id, { ...c, videoId: normVidId || c.videoId });
+                }
+              });
+              const merged = Array.from(commentMap.values());
+              if (JSON.stringify(merged) !== JSON.stringify(prevComments)) {
+                return merged;
+              }
+              return prevComments;
+            });
+          }
+
+          // Sync Drawings in Real Time
+          if (cloudDb.drawings) {
+            setDrawings(prevDrawings => {
+              const merged = { ...prevDrawings };
+              Object.keys(cloudDb.drawings).forEach(vidKey => {
+                const normKey = getDeterministicId(vidKey);
+                merged[normKey] = {
+                  ...(merged[normKey] || {}),
+                  ...cloudDb.drawings[vidKey]
+                };
+              });
+              if (JSON.stringify(merged) !== JSON.stringify(prevDrawings)) {
+                return merged;
+              }
+              return prevDrawings;
+            });
+          }
+
+          // Sync Video Folders / Status in Real Time
+          if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
+            setVideos(prevVideos => {
+              let changed = false;
+              const updated = prevVideos.map(v => {
+                const cloudVid = cloudDb.videos.find(cv => getDeterministicId(cv.id || cv.url) === v.id);
+                if (cloudVid && (cloudVid.brand !== v.brand || cloudVid.status !== v.status || cloudVid.title !== v.title)) {
+                  changed = true;
+                  return { ...v, brand: cloudVid.brand || v.brand, status: cloudVid.status || v.status, title: cloudVid.title || v.title };
+                }
+                return v;
+              });
+              return changed ? updated : prevVideos;
+            });
+          }
+        }
+      } catch (e) {
+        // Silent catch for background network drops
+      }
+    }, 3000); // 3-second live pulse
+
+    return () => clearInterval(liveSyncInterval);
+  }, [isDbLoaded, isSyncing]);
+
+  // 3. AUTO-SAVE ON LOCAL STATE CHANGES
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
 
@@ -280,7 +354,7 @@ export default function App() {
     return () => clearTimeout(debounceSync);
   }, [videos, drawings, comments, isDbLoaded]);
 
-  // 3. DEEP LINK RESOLUTION FOR HIVE SHARE LINKS
+  // 4. DEEP LINK RESOLUTION FOR SHARE LINKS
   useEffect(() => {
     const param = initialVideoParamRef.current;
     if (param && videos.length > 0) {
@@ -297,7 +371,7 @@ export default function App() {
     }
   }, [videos, isDbLoaded]);
 
-  // 4. KEEP BROWSER ADDRESS BAR URL IN SYNC WITH CURRENT VIEW & VIDEO
+  // 5. KEEP URL IN SYNC WITH CURRENT VIEW & VIDEO
   useEffect(() => {
     if (currentView === 'review' && activeVideoId) {
       const newUrl = `${window.location.pathname}?v=${encodeURIComponent(activeVideoId)}`;
@@ -581,7 +655,7 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
-  // Comment Handlers (Saves instantly to LocalStorage + Cloud Sync)
+  // Comment Handlers (Syncs instantly across devices)
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -731,7 +805,14 @@ export default function App() {
   };
 
   const targetVidId = activeVideo?.id || activeVideoId;
-  const activeComments = comments.filter(c => c.videoId === targetVidId);
+  const allVideoComments = comments.filter(c => c.videoId === targetVidId);
+
+  // Filter comments based on active tab selection
+  const filteredComments = allVideoComments.filter(c => {
+    if (commentFilter === 'unresolved') return !c.completed;
+    if (commentFilter === 'resolved') return c.completed;
+    return true; // 'all'
+  });
 
   const filteredVideos = videos.filter(v => {
     const matchesBrand = selectedBrand === 'All' || v.brand === selectedBrand;
@@ -756,7 +837,7 @@ export default function App() {
             </div>
 
             {/* Cloud Sync Indicator */}
-            <div className="text-slate-500" title={isSyncing ? "Syncing with Bunny Cloud..." : "Cloud Saved"}>
+            <div className="text-slate-500" title={isSyncing ? "Syncing with Bunny Cloud..." : "Live Cloud Sync Active"}>
               {isSyncing ? (
                 <Loader2 size={14} className="animate-spin text-indigo-400" />
               ) : (
@@ -1062,7 +1143,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Video Canvas Container (Adapts smoothly to 16:9 widescreen or 9:16 vertical videos) */}
+            {/* Video Canvas Container */}
             <div className="flex-1 flex flex-col justify-center items-center p-3 md:p-6 bg-slate-950 relative overflow-hidden min-h-[50vh]">
               <div className="relative max-h-[60vh] lg:max-h-[70vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
                 
@@ -1083,7 +1164,7 @@ export default function App() {
                   }}
                 />
 
-                {/* Drawing Canvas Overlay with Touch Action Disabled for Clean Mobile Drawing */}
+                {/* Drawing Canvas Overlay */}
                 <canvas
                   ref={canvasRef}
                   width={1280}
@@ -1148,7 +1229,7 @@ export default function App() {
                     style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
                   />
 
-                  {activeComments.map(c => {
+                  {allVideoComments.map(c => {
                     const percent = (c.timestamp / (duration || 1)) * 100;
                     return (
                       <button
@@ -1200,15 +1281,45 @@ export default function App() {
             </div>
           </div>
 
-          {/* COMMENTS PANEL (Feedback input positioned FIRST, comments rendered BELOW) */}
+          {/* COMMENTS PANEL WITH RETENTION TABS & TOP TYPE-IN BAR */}
           <div className="w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col flex-shrink-0 min-h-[300px] lg:min-h-0">
-            <div className="p-3 border-b border-slate-800 flex items-center justify-between">
-              <h2 className="font-bold text-white text-xs flex items-center gap-2 uppercase tracking-wider">
-                <MessageSquare size={14} /> Comments ({activeComments.length})
-              </h2>
+            <div className="p-3 border-b border-slate-800 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold text-white text-xs flex items-center gap-2 uppercase tracking-wider">
+                  <MessageSquare size={14} /> Comments ({filteredComments.length})
+                </h2>
+              </div>
+
+              {/* Resolved / Unresolved Filter Tabs */}
+              <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px] font-medium">
+                <button
+                  onClick={() => setCommentFilter('unresolved')}
+                  className={`flex-1 py-1 rounded transition text-center ${
+                    commentFilter === 'unresolved' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Active
+                </button>
+                <button
+                  onClick={() => setCommentFilter('resolved')}
+                  className={`flex-1 py-1 rounded transition text-center ${
+                    commentFilter === 'resolved' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Resolved ({allVideoComments.filter(c => c.completed).length})
+                </button>
+                <button
+                  onClick={() => setCommentFilter('all')}
+                  className={`flex-1 py-1 rounded transition text-center ${
+                    commentFilter === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  All ({allVideoComments.length})
+                </button>
+              </div>
             </div>
 
-            {/* INPUT FORM POSITIONED AT TOP */}
+            {/* INPUT FORM (POSITIONED AT TOP) */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
@@ -1234,14 +1345,16 @@ export default function App() {
               </div>
             </form>
 
-            {/* COMMENTS LIST POSITIONED BELOW INPUT FORM */}
+            {/* COMMENTS LIST (POSITIONED BELOW INPUT FORM) */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[350px] lg:max-h-none">
-              {activeComments.length === 0 ? (
+              {filteredComments.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs">
-                  No comments or drawings yet.<br/>Pause and write a note or draw on the video!
+                  {commentFilter === 'resolved' 
+                    ? 'No resolved comments yet.' 
+                    : 'No active comments. Add feedback above or draw on the video!'}
                 </div>
               ) : (
-                activeComments.map(c => (
+                filteredComments.map(c => (
                   <div 
                     key={c.id} 
                     className={`p-2.5 rounded-lg border transition ${
