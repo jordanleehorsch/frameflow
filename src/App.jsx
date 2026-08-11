@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v2.3",
-  title: "Auto-Resolve Comments & Clear Markups on Replace",
-  description: "Replacing a video now automatically moves previous comments into the Resolved tab and removes old canvas markups for a clean review on the new cut!"
+  version: "v2.4",
+  title: "Scrubber Pinpoint Highlighting & Clean Replaces",
+  description: "Clicking a pinpoint on the video timeline now highlights and scrolls to the comment! Replaced videos clear scrubber pinpoints automatically."
 };
 
 // Safe Deterministic ID Generator
@@ -87,6 +87,9 @@ export default function App() {
   const [commentSort, setCommentSort] = useState('timestamp');
   const [commentText, setCommentText] = useState('');
 
+  // 📌 HIGHLIGHTED COMMENT STATE
+  const [highlightedCommentId, setHighlightedCommentId] = useState(null);
+
   // 💾 DEVICE-SPECIFIC REVIEWER NAME
   const [authorName, setAuthorName] = useState(() => {
     try {
@@ -119,6 +122,16 @@ export default function App() {
   const canvasRef = useRef(null);
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
+
+  // Auto-scroll to highlighted comment in list
+  useEffect(() => {
+    if (highlightedCommentId) {
+      const el = document.getElementById(`comment-${highlightedCommentId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }, [highlightedCommentId]);
 
   // DIRECT CLOUD SAVE FUNCTION
   const saveCloudDatabaseDirect = async (vList, dMap, cList) => {
@@ -861,6 +874,10 @@ export default function App() {
       }
     }
 
+    if (highlightedCommentId === commentId) {
+      setHighlightedCommentId(null);
+    }
+
     setComments(updatedComments);
     setDrawings(nextDrawings);
 
@@ -921,7 +938,7 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
-  // 🔄 REPLACE VIDEO HANDLER: AUTO-RESOLVES PREVIOUS COMMENTS & CLEARS OLD MARKUPS
+  // 🔄 REPLACE VIDEO HANDLER: AUTO-RESOLVES COMMENTS & CLEARS MARKUPS
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!newVideoUrl) {
@@ -935,7 +952,7 @@ export default function App() {
     const newId = getDeterministicId(newVideoUrl) || oldId;
     const oldVideo = videos.find(v => v.id === oldId);
 
-    // 1. Delete old file from Bunny CDN storage
+    // Delete old file from Bunny CDN storage
     if (oldVideo && oldVideo.url && oldVideo.url !== newVideoUrl) {
       try {
         const oldFileName = oldVideo.url.split('/').pop();
@@ -951,7 +968,6 @@ export default function App() {
       }
     }
 
-    // 2. Update existing video object in place
     const updatedVideos = videos.map(v => {
       if (v.id === oldId) {
         return {
@@ -964,13 +980,13 @@ export default function App() {
       return v;
     });
 
-    // 3. REMOVE ALL CANVAS MARKUPS FOR THIS VIDEO
+    // 🧹 Remove all canvas markups for this video
     let nextDrawings = { ...drawings };
     delete nextDrawings[oldId];
     delete nextDrawings[newId];
     setDrawings(nextDrawings);
 
-    // 4. MOVE PREVIOUS COMMENTS TO RESOLVED TAB (and remove drawing badges)
+    // 📁 Move previous comments to Resolved tab
     let nextComments = comments.map(c => {
       if (c.videoId === oldId || c.videoId === newId) {
         return { 
@@ -984,6 +1000,7 @@ export default function App() {
     });
     setComments(nextComments);
 
+    setHighlightedCommentId(null);
     setVideos(updatedVideos);
     setActiveVideoId(newId);
     setIsReplaceOpen(false);
@@ -1008,6 +1025,13 @@ export default function App() {
       videoRef.current.pause();
       setIsPlaying(false);
     }
+  };
+
+  // 📌 PINPOINT CLICK HANDLER: Jumps to frame and highlights comment
+  const handlePinpointClick = (comment, e) => {
+    if (e) e.stopPropagation();
+    jumpToTime(comment.timestamp);
+    setHighlightedCommentId(comment.id);
   };
 
   const generateAiActionPlan = () => {
@@ -1477,6 +1501,7 @@ export default function App() {
                 </div>
               </div>
 
+              {/* VIDEO SCRUBBER TIMELINE & DYNAMIC ACTIVE PINPOINTS */}
               <div className="w-full max-w-5xl mt-3 bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
                 <div className="relative w-full h-3 bg-slate-800 rounded-lg cursor-pointer flex items-center">
                   <input
@@ -1494,18 +1519,19 @@ export default function App() {
                     style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
                   />
 
-                  {allVideoComments.map(c => {
+                  {/* Pinpoints render filteredComments (clears on video replace and highlights on click) */}
+                  {filteredComments.map(c => {
                     const percent = (c.timestamp / (duration || 1)) * 100;
+                    const isHighlighted = highlightedCommentId === c.id;
                     return (
                       <button
                         key={c.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          jumpToTime(c.timestamp);
-                        }}
+                        onClick={(e) => handlePinpointClick(c, e)}
                         style={{ left: `${percent}%` }}
-                        className={`absolute z-30 w-2.5 h-4 -top-0.5 rounded-sm transform -translate-x-1/2 border border-slate-900 transition hover:scale-125 ${
-                          c.hasDrawing ? 'bg-amber-400' : 'bg-indigo-400'
+                        className={`absolute z-30 w-2.5 h-4 -top-0.5 rounded-sm transform -translate-x-1/2 border transition-all ${
+                          isHighlighted 
+                            ? 'ring-2 ring-white scale-150 z-40 bg-white border-indigo-600' 
+                            : c.hasDrawing ? 'bg-amber-400 border-slate-900' : 'bg-indigo-400 border-slate-900'
                         }`}
                         title={`[${c.timeFormatted}] ${c.author}: ${c.text}`}
                       />
@@ -1595,6 +1621,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* INPUT FORM */}
             <form onSubmit={handleAddComment} className="p-3 border-b border-slate-800 space-y-2 bg-slate-900">
               <input 
                 type="text" 
@@ -1628,50 +1655,58 @@ export default function App() {
                     : 'No active comments. Add feedback above or draw on the video!'}
                 </div>
               ) : (
-                sortedComments.map(c => (
-                  <div 
-                    key={c.id} 
-                    className={`p-2.5 rounded-lg border transition ${
-                      c.completed ? 'bg-slate-900/40 border-slate-800 opacity-60' : 'bg-slate-800/60 border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-xs text-indigo-400">{c.author}</span>
-                      <button 
-                        onClick={() => jumpToTime(c.timestamp)}
-                        className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white transition"
-                      >
-                        {c.timeFormatted}
-                      </button>
-                    </div>
-                    <p className="text-xs text-slate-200">{c.text}</p>
-                    
-                    {c.hasDrawing && (
-                      <div className="mt-2 flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/40 border border-amber-800/50 px-2 py-0.5 rounded-md w-fit font-medium">
-                        <Pencil size={11} /> Drawing Markup Attached
+                sortedComments.map(c => {
+                  const isHighlighted = highlightedCommentId === c.id;
+                  return (
+                    <div 
+                      key={c.id} 
+                      id={`comment-${c.id}`}
+                      className={`p-2.5 rounded-lg border transition-all duration-300 ${
+                        isHighlighted
+                          ? 'bg-indigo-900/90 border-indigo-400 ring-2 ring-indigo-500/80 shadow-lg scale-[1.02]'
+                          : c.completed 
+                          ? 'bg-slate-900/40 border-slate-800 opacity-60' 
+                          : 'bg-slate-800/60 border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-xs text-indigo-400">{c.author}</span>
+                        <button 
+                          onClick={() => jumpToTime(c.timestamp)}
+                          className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white transition"
+                        >
+                          {c.timeFormatted}
+                        </button>
                       </div>
-                    )}
+                      <p className="text-xs text-slate-200">{c.text}</p>
+                      
+                      {c.hasDrawing && (
+                        <div className="mt-2 flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/40 border border-amber-800/50 px-2 py-0.5 rounded-md w-fit font-medium">
+                          <Pencil size={11} /> Drawing Markup Attached
+                        </div>
+                      )}
 
-                    <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-700/50">
-                      <button 
-                        onClick={() => toggleCommentComplete(c.id)}
-                        className={`flex items-center gap-1 text-[10px] font-medium transition ${
-                          c.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        <Check size={11} /> {c.completed ? 'Resolved' : 'Mark Resolved'}
-                      </button>
+                      <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-700/50">
+                        <button 
+                          onClick={() => toggleCommentComplete(c.id)}
+                          className={`flex items-center gap-1 text-[10px] font-medium transition ${
+                            c.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Check size={11} /> {c.completed ? 'Resolved' : 'Mark Resolved'}
+                        </button>
 
-                      <button 
-                        onClick={(e) => handleDeleteComment(c.id, e)}
-                        className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-red-400 transition"
-                        title="Delete Comment"
-                      >
-                        <Trash2 size={11} /> Delete
-                      </button>
+                        <button 
+                          onClick={(e) => handleDeleteComment(c.id, e)}
+                          className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-red-400 transition"
+                          title="Delete Comment"
+                        >
+                          <Trash2 size={11} /> Delete
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
