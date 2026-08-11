@@ -3,7 +3,7 @@ import {
   Play, Pause, Volume2, VolumeX, Maximize, Pencil, MessageSquare, 
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
-  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown
+  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell
 } from 'lucide-react';
 
 // ==========================================
@@ -15,6 +15,13 @@ const BUNNY_STORAGE_API_URL = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_Z
 const BUNNY_PULL_ZONE_URL = "https://jordanhorsch.b-cdn.net/";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
+
+// Latest App Update Information
+const LATEST_APP_UPDATE = {
+  version: "v1.5",
+  title: "Mobile Folder Filtering & Comment-Drawing Merging",
+  description: "Brand workspace folders are now available on mobile! Canvas markups and text feedback on the same keyframe now merge automatically."
+};
 
 // Safe Deterministic ID Generator: Prevents double-prefixing IDs on sync
 const getDeterministicId = (filenameOrUrl) => {
@@ -41,6 +48,9 @@ export default function App() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoadRef = useRef(true);
+
+  // Update Notification Banner Visibility
+  const [showUpdateBanner, setShowUpdateBanner] = useState(true);
 
   const [brands] = useState(INITIAL_BRANDS);
   const [selectedBrand, setSelectedBrand] = useState('All');
@@ -706,7 +716,6 @@ export default function App() {
     if (file) {
       setSelectedFile(file);
       const cleanName = extractFilenameWithoutExt(file.name);
-      // Only set title if adding new video, or if replace title is empty
       if (!isReplaceOpen || !newVideoTitle) {
         setNewVideoTitle(cleanName);
       }
@@ -751,7 +760,6 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
-  // Replace Video Handler: Deletes old file from Bunny CDN and updates in place!
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!newVideoUrl) {
@@ -765,7 +773,6 @@ export default function App() {
     const newId = getDeterministicId(newVideoUrl) || oldId;
     const oldVideo = videos.find(v => v.id === oldId);
 
-    // 1. Delete old file from Bunny CDN storage so duplicate cards aren't generated
     if (oldVideo && oldVideo.url && oldVideo.url !== newVideoUrl) {
       try {
         const oldFileName = oldVideo.url.split('/').pop();
@@ -777,11 +784,10 @@ export default function App() {
           });
         }
       } catch (err) {
-        console.error("Error deleting old replaced file from Bunny CDN:", err);
+        console.error("Error deleting old replaced file:", err);
       }
     }
 
-    // 2. Update existing video object in place
     const updatedVideos = videos.map(v => {
       if (v.id === oldId) {
         return {
@@ -794,7 +800,6 @@ export default function App() {
       return v;
     });
 
-    // 3. Transfer drawings to new ID
     let nextDrawings = { ...drawings };
     if (oldId !== newId && drawings[oldId]) {
       nextDrawings[newId] = { ...(nextDrawings[newId] || {}), ...drawings[oldId] };
@@ -802,7 +807,6 @@ export default function App() {
       setDrawings(nextDrawings);
     }
 
-    // 4. Transfer comments to new ID
     let nextComments = comments.map(c => {
       if (c.videoId === oldId) {
         return { ...c, videoId: newId };
@@ -883,7 +887,7 @@ export default function App() {
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
-      {/* GLOBAL SIDEBAR */}
+      {/* GLOBAL SIDEBAR (Supports Mobile + Desktop) */}
       <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
           <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between">
@@ -935,12 +939,13 @@ export default function App() {
             </button>
           </div>
 
-          <div className="hidden md:block px-4 py-3 border-t border-slate-800/80">
-            <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 block">Brand Workspace</label>
+          {/* Brand Workspace Filters (Now Mobile Accessible) */}
+          <div className="px-3 py-2 md:px-4 md:py-3 border-t border-slate-800/80">
+            <label className="text-[10px] md:text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 md:mb-2 block">Brand Workspace</label>
             <select 
               value={selectedBrand} 
               onChange={(e) => setSelectedBrand(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
             >
               <option value="All">All Concepts ({videos.length})</option>
               {brands.map(b => <option key={b} value={b}>{b}</option>)}
@@ -961,27 +966,69 @@ export default function App() {
       {/* VIEW 1: DASHBOARD HUB */}
       {currentView === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950">
-          <div className="h-16 border-b border-slate-800 px-4 md:px-8 flex items-center justify-between bg-slate-900/40 sticky top-0 backdrop-blur z-20 gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input 
-                type="text" 
-                placeholder="Search videos, brands..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
-              />
+          
+          {/* Top Search Bar & Mobile Folder Dropdown */}
+          <div className="h-auto md:h-16 border-b border-slate-800 p-3 md:px-8 flex flex-col sm:flex-row items-center justify-between bg-slate-900/40 sticky top-0 backdrop-blur z-20 gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 w-full max-w-lg">
+              <div className="relative flex-1">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="text" 
+                  placeholder="Search videos, brands..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                />
+              </div>
+
+              {/* Folder Selector Dropdown in Sticky Navigation */}
+              <select 
+                value={selectedBrand} 
+                onChange={(e) => setSelectedBrand(e.target.value)}
+                className="bg-slate-900 border border-slate-800 text-indigo-300 text-xs rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium"
+              >
+                <option value="All">All Folders</option>
+                {brands.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
             </div>
 
             <button 
               onClick={() => setIsUploadOpen(true)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2 px-4 rounded-xl transition shadow-md whitespace-nowrap"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2 px-4 rounded-xl transition shadow-md whitespace-nowrap"
             >
               <Plus size={16} /> Upload
             </button>
           </div>
 
           <div className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
+            
+            {/* 📢 FRONT-PAGE UPDATE ANNOUNCEMENT BANNER */}
+            {showUpdateBanner && (
+              <div className="bg-indigo-950/80 border border-indigo-500/40 rounded-xl p-4 flex items-start justify-between gap-3 text-xs shadow-lg relative overflow-hidden">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-indigo-600 rounded-lg text-white flex-shrink-0 mt-0.5 shadow-md">
+                    <Sparkles size={16} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-white text-sm">{LATEST_APP_UPDATE.title}</span>
+                      <span className="bg-indigo-600/60 text-indigo-200 text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold">{LATEST_APP_UPDATE.version}</span>
+                    </div>
+                    <p className="text-slate-300 mt-1 leading-relaxed">
+                      {LATEST_APP_UPDATE.description}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowUpdateBanner(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-indigo-900/50 transition flex-shrink-0"
+                  title="Dismiss Announcement"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold text-slate-200 tracking-wide">Recents</h2>
@@ -1164,7 +1211,6 @@ export default function App() {
                   <Download size={12} />
                 </a>
 
-                {/* Pre-populates video title by default on replace */}
                 <button 
                   onClick={() => {
                     setNewVideoTitle(activeVideo?.title || '');
