@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v2.4",
-  title: "Scrubber Pinpoint Highlighting & Clean Replaces",
-  description: "Clicking a pinpoint on the video timeline now highlights and scrolls to the comment! Replaced videos clear scrubber pinpoints automatically."
+  version: "v2.5",
+  title: "Two-Way Comment Card & Timeline Sync",
+  description: "Clicking anywhere on a comment card now jumps to that exact keyframe in the video and highlights both the card and the timeline pinpoint!"
 };
 
 // Safe Deterministic ID Generator
@@ -834,7 +834,8 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, nextComments);
   };
 
-  const toggleCommentComplete = (id) => {
+  const toggleCommentComplete = (id, e) => {
+    if (e) e.stopPropagation(); // Prevents scrubbing timeline when toggling complete
     const updatedComments = comments.map(c => c.id === id ? { ...c, completed: !c.completed } : c);
     setComments(updatedComments);
     try {
@@ -952,7 +953,6 @@ export default function App() {
     const newId = getDeterministicId(newVideoUrl) || oldId;
     const oldVideo = videos.find(v => v.id === oldId);
 
-    // Delete old file from Bunny CDN storage
     if (oldVideo && oldVideo.url && oldVideo.url !== newVideoUrl) {
       try {
         const oldFileName = oldVideo.url.split('/').pop();
@@ -980,13 +980,11 @@ export default function App() {
       return v;
     });
 
-    // 🧹 Remove all canvas markups for this video
     let nextDrawings = { ...drawings };
     delete nextDrawings[oldId];
     delete nextDrawings[newId];
     setDrawings(nextDrawings);
 
-    // 📁 Move previous comments to Resolved tab
     let nextComments = comments.map(c => {
       if (c.videoId === oldId || c.videoId === newId) {
         return { 
@@ -1030,6 +1028,12 @@ export default function App() {
   // 📌 PINPOINT CLICK HANDLER: Jumps to frame and highlights comment
   const handlePinpointClick = (comment, e) => {
     if (e) e.stopPropagation();
+    jumpToTime(comment.timestamp);
+    setHighlightedCommentId(comment.id);
+  };
+
+  // 💬 COMMENT CARD CLICK HANDLER: Jumps to frame and highlights both comment and pinpoint
+  const handleCommentCardClick = (comment) => {
     jumpToTime(comment.timestamp);
     setHighlightedCommentId(comment.id);
   };
@@ -1501,7 +1505,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* VIDEO SCRUBBER TIMELINE & DYNAMIC ACTIVE PINPOINTS */}
+              {/* VIDEO SCRUBBER TIMELINE */}
               <div className="w-full max-w-5xl mt-3 bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
                 <div className="relative w-full h-3 bg-slate-800 rounded-lg cursor-pointer flex items-center">
                   <input
@@ -1519,7 +1523,6 @@ export default function App() {
                     style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
                   />
 
-                  {/* Pinpoints render filteredComments (clears on video replace and highlights on click) */}
                   {filteredComments.map(c => {
                     const percent = (c.timestamp / (duration || 1)) * 100;
                     const isHighlighted = highlightedCommentId === c.id;
@@ -1647,6 +1650,7 @@ export default function App() {
               </div>
             </form>
 
+            {/* COMMENTS LIST (Clicking Card Jumps to Frame & Highlights Pinpoint) */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[350px] lg:max-h-none">
               {sortedComments.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs">
@@ -1661,18 +1665,22 @@ export default function App() {
                     <div 
                       key={c.id} 
                       id={`comment-${c.id}`}
-                      className={`p-2.5 rounded-lg border transition-all duration-300 ${
+                      onClick={() => handleCommentCardClick(c)}
+                      className={`p-2.5 rounded-lg border transition-all duration-300 cursor-pointer ${
                         isHighlighted
                           ? 'bg-indigo-900/90 border-indigo-400 ring-2 ring-indigo-500/80 shadow-lg scale-[1.02]'
                           : c.completed 
                           ? 'bg-slate-900/40 border-slate-800 opacity-60' 
-                          : 'bg-slate-800/60 border-slate-700'
+                          : 'bg-slate-800/60 border-slate-700 hover:border-slate-600'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-semibold text-xs text-indigo-400">{c.author}</span>
                         <button 
-                          onClick={() => jumpToTime(c.timestamp)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            jumpToTime(c.timestamp);
+                          }}
                           className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white transition"
                         >
                           {c.timeFormatted}
@@ -1688,7 +1696,7 @@ export default function App() {
 
                       <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-700/50">
                         <button 
-                          onClick={() => toggleCommentComplete(c.id)}
+                          onClick={(e) => toggleCommentComplete(c.id, e)}
                           className={`flex items-center gap-1 text-[10px] font-medium transition ${
                             c.completed ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
                           }`}
