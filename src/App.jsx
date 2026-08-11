@@ -3,7 +3,7 @@ import {
   Play, Pause, Volume2, VolumeX, Maximize, Pencil, MessageSquare, 
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
-  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter
+  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown
 } from 'lucide-react';
 
 // ==========================================
@@ -74,6 +74,7 @@ export default function App() {
     } catch(e) { return []; }
   });
   const [commentFilter, setCommentFilter] = useState('unresolved');
+  const [commentSort, setCommentSort] = useState('timestamp'); // Default sort: Timecode!
   const [commentText, setCommentText] = useState('');
   const [authorName, setAuthorName] = useState('Reviewer');
 
@@ -248,7 +249,7 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Fixed ID Matching)
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -750,10 +751,23 @@ export default function App() {
   const targetVidId = activeVideo?.id || activeVideoId;
   const allVideoComments = comments.filter(c => c.videoId === targetVidId);
 
+  // Filter comments based on active tab selection
   const filteredComments = allVideoComments.filter(c => {
     if (commentFilter === 'unresolved') return !c.completed;
     if (commentFilter === 'resolved') return c.completed;
     return true;
+  });
+
+  // Sort comments based on selected dropdown option (Default: Timecode)
+  const sortedComments = [...filteredComments].sort((a, b) => {
+    if (commentSort === 'timestamp') {
+      return (a.timestamp || 0) - (b.timestamp || 0);
+    } else if (commentSort === 'newest') {
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    } else if (commentSort === 'oldest') {
+      return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+    }
+    return 0;
   });
 
   const filteredVideos = videos.filter(v => {
@@ -1208,6 +1222,20 @@ export default function App() {
                 <h2 className="font-bold text-white text-xs flex items-center gap-2 uppercase tracking-wider">
                   <MessageSquare size={14} /> Comments ({filteredComments.length})
                 </h2>
+
+                {/* SORT BY DROPDOWN (Default: Timecode) */}
+                <div className="flex items-center gap-1">
+                  <ArrowUpDown size={12} className="text-slate-400" />
+                  <select
+                    value={commentSort}
+                    onChange={(e) => setCommentSort(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-indigo-300 text-[10px] font-medium rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="timestamp">Timecode</option>
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px] font-medium">
@@ -1264,14 +1292,14 @@ export default function App() {
             </form>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[350px] lg:max-h-none">
-              {filteredComments.length === 0 ? (
+              {sortedComments.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs">
                   {commentFilter === 'resolved' 
                     ? 'No resolved comments yet.' 
                     : 'No active comments. Add feedback above or draw on the video!'}
                 </div>
               ) : (
-                filteredComments.map(c => (
+                sortedComments.map(c => (
                   <div 
                     key={c.id} 
                     className={`p-2.5 rounded-lg border transition ${
