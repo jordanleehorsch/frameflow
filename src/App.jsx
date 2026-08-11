@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v2.5",
-  title: "Two-Way Comment Card & Timeline Sync",
-  description: "Clicking anywhere on a comment card now jumps to that exact keyframe in the video and highlights both the card and the timeline pinpoint!"
+  version: "v2.6",
+  title: "Auto-Prioritize 'Changes Requested' Videos",
+  description: "Videos with 'Changes Requested' status automatically jump to the top of your Recents list on the home dashboard for instant visibility!"
 };
 
 // Safe Deterministic ID Generator
@@ -33,6 +33,14 @@ const getDeterministicId = (filenameOrUrl) => {
   const filename = str.split('/').pop().split('?')[0];
   const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
   return 'vid-' + decodeURIComponent(nameWithoutExt).toLowerCase().replace(/[^a-z0-9]/g, '_');
+};
+
+// Helper function to promote a video to the top of the list with a new status
+const moveVideoToTopWithStatus = (videoList, targetId, newStatus) => {
+  const target = videoList.find(v => v.id === targetId);
+  if (!target) return videoList;
+  const remaining = videoList.filter(v => v.id !== targetId);
+  return [{ ...target, status: newStatus }, ...remaining];
 };
 
 export default function App() {
@@ -242,7 +250,8 @@ export default function App() {
           };
         });
 
-        const mergedVideoList = bunnyFiles.map(file => {
+        const bunnyVideoMap = new Map();
+        bunnyFiles.forEach(file => {
           const filename = file.ObjectName;
           const publicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/${filename}`;
           const id = getDeterministicId(filename);
@@ -253,7 +262,7 @@ export default function App() {
             .replace(/\.[^/.]+$/, "")
             .replace(/_/g, ' ');
 
-          return {
+          bunnyVideoMap.set(id, {
             id: id,
             title: meta?.title || cleanTitle || filename,
             brand: meta?.brand || 'Thrive',
@@ -261,8 +270,22 @@ export default function App() {
             status: meta?.status || 'In Review',
             createdAt: meta?.createdAt || file.LastChanged || new Date().toISOString(),
             duration: meta?.duration || 30
-          };
+          });
         });
+
+        // Respect saved cloudDb video ordering (so top video positions sync across devices)
+        const mergedVideoList = [];
+        if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
+          cloudDb.videos.forEach(cv => {
+            const normId = getDeterministicId(cv.id || cv.url);
+            if (normId && bunnyVideoMap.has(normId)) {
+              mergedVideoList.push(bunnyVideoMap.get(normId));
+              bunnyVideoMap.delete(normId);
+            }
+          });
+        }
+        // Append any remaining files from Bunny CDN
+        bunnyVideoMap.forEach(v => mergedVideoList.push(v));
 
         setVideos(mergedVideoList);
         setComments(Array.from(commentMap.values()));
@@ -330,43 +353,45 @@ export default function App() {
 
           if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
             setVideos(prevVideos => {
-              const vidMap = new Map();
-              prevVideos.forEach(v => vidMap.set(v.id, v));
-
-              let hasChange = false;
-
+              const cloudVidMap = new Map();
               cloudDb.videos.forEach(cv => {
                 const normId = getDeterministicId(cv.id || cv.url);
-                if (normId) {
-                  const existing = vidMap.get(normId);
-                  if (existing) {
-                    const newTitle = cv.title || existing.title;
-                    const newBrand = cv.brand || existing.brand;
-                    const newStatus = cv.status || existing.status;
-                    const newUrl = cv.url || existing.url;
-
-                    if (existing.title !== newTitle || existing.brand !== newBrand || existing.status !== newStatus || existing.url !== newUrl) {
-                      hasChange = true;
-                      vidMap.set(normId, { ...existing, title: newTitle, brand: newBrand, status: newStatus, url: newUrl });
-                    }
-                  } else {
-                    hasChange = true;
-                    vidMap.set(normId, {
-                      id: normId,
-                      title: cv.title || 'Untitled Video',
-                      brand: cv.brand || 'Thrive',
-                      url: cv.url,
-                      status: cv.status || 'In Review',
-                      createdAt: cv.createdAt || new Date().toISOString(),
-                      duration: cv.duration || 30
-                    });
-                  }
-                }
+                if (normId) cloudVidMap.set(normId, cv);
               });
 
-              if (hasChange) {
+              const cloudIds = Array.from(cloudVidMap.keys());
+              const prevIds = prevVideos.map(v => v.id);
+
+              let isDifferent = cloudIds.length !== prevIds.length || cloudIds.some((id, idx) => id !== prevIds[idx]);
+
+              if (!isDifferent) {
+                isDifferent = prevVideos.some(v => {
+                  const cv = cloudVidMap.get(v.id);
+                  return cv && (v.title !== cv.title || v.brand !== cv.brand || v.status !== cv.status || v.url !== cv.url);
+                });
+              }
+
+              if (isDifferent) {
                 stateUpdated = true;
-                return Array.from(vidMap.values());
+                const updatedList = [];
+                cloudVidMap.forEach((cv, normId) => {
+                  const existing = prevVideos.find(pv => pv.id === normId);
+                  updatedList.push({
+                    id: normId,
+                    title: cv.title || existing?.title || 'Untitled Video',
+                    brand: cv.brand || existing?.brand || 'Thrive',
+                    url: cv.url || existing?.url,
+                    status: cv.status || existing?.status || 'In Review',
+                    createdAt: cv.createdAt || existing?.createdAt || new Date().toISOString(),
+                    duration: cv.duration || existing?.duration || 30
+                  });
+                });
+                prevVideos.forEach(pv => {
+                  if (!cloudVidMap.has(pv.id)) {
+                    updatedList.push(pv);
+                  }
+                });
+                return updatedList;
               }
               return prevVideos;
             });
@@ -559,8 +584,14 @@ export default function App() {
     return filename.replace(/\.[^/.]+$/, "");
   };
 
+  // Status update moves video to top if "Changes Requested"
   const handleUpdateStatus = (status) => {
-    const updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status } : v);
+    let updatedVideos;
+    if (status === 'Changes Requested') {
+      updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, status);
+    } else {
+      updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status } : v);
+    }
     setVideos(updatedVideos);
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
@@ -639,6 +670,7 @@ export default function App() {
     renderCanvas();
   };
 
+  // Stop Drawing: Promotes video to top with Changes Requested
   const stopDrawing = () => {
     if (!isDrawingMode || !isMouseDown || !activeVideo) return;
     setIsMouseDown(false);
@@ -694,7 +726,8 @@ export default function App() {
 
       setComments(nextComments);
 
-      const updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status: 'Changes Requested' } : v);
+      // Move video to top and update status to Changes Requested
+      const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
       setVideos(updatedVideos);
 
       saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments);
@@ -767,6 +800,7 @@ export default function App() {
     }
   }, [currentTime, drawings, activeVideoId, currentPath, currentView]);
 
+  // Comment Handler: Promotes video to top with Changes Requested
   const handleAddComment = (e) => {
     e.preventDefault();
     if (!commentText.trim() || !activeVideo) return;
@@ -823,7 +857,8 @@ export default function App() {
     setComments(nextComments);
     setCommentText('');
 
-    const updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status: 'Changes Requested' } : v);
+    // Move video to top and update status to Changes Requested
+    const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
 
     try {
@@ -835,7 +870,7 @@ export default function App() {
   };
 
   const toggleCommentComplete = (id, e) => {
-    if (e) e.stopPropagation(); // Prevents scrubbing timeline when toggling complete
+    if (e) e.stopPropagation();
     const updatedComments = comments.map(c => c.id === id ? { ...c, completed: !c.completed } : c);
     setComments(updatedComments);
     try {
@@ -939,7 +974,7 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
-  // 🔄 REPLACE VIDEO HANDLER: AUTO-RESOLVES COMMENTS & CLEARS MARKUPS
+  // 🔄 REPLACE VIDEO HANDLER
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!newVideoUrl) {
@@ -1025,14 +1060,14 @@ export default function App() {
     }
   };
 
-  // 📌 PINPOINT CLICK HANDLER: Jumps to frame and highlights comment
+  // 📌 PINPOINT CLICK HANDLER
   const handlePinpointClick = (comment, e) => {
     if (e) e.stopPropagation();
     jumpToTime(comment.timestamp);
     setHighlightedCommentId(comment.id);
   };
 
-  // 💬 COMMENT CARD CLICK HANDLER: Jumps to frame and highlights both comment and pinpoint
+  // 💬 COMMENT CARD CLICK HANDLER
   const handleCommentCardClick = (comment) => {
     jumpToTime(comment.timestamp);
     setHighlightedCommentId(comment.id);
@@ -1533,7 +1568,7 @@ export default function App() {
                         style={{ left: `${percent}%` }}
                         className={`absolute z-30 w-2.5 h-4 -top-0.5 rounded-sm transform -translate-x-1/2 border transition-all ${
                           isHighlighted 
-                            ? 'ring-2 ring-white scale-150 z-40 bg-white border-indigo-600' 
+                            ? 'ring-2 ring-white scale-150 z-40 bg-white border-indigo-600 shadow-lg' 
                             : c.hasDrawing ? 'bg-amber-400 border-slate-900' : 'bg-indigo-400 border-slate-900'
                         }`}
                         title={`[${c.timeFormatted}] ${c.author}: ${c.text}`}
