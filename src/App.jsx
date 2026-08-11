@@ -18,9 +18,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v3.0",
-  title: "Spatial On-Video Pinpoint Comments",
-  description: "Click anywhere on the video frame to drop a spatial pinpoint marker and type an inline note directly on screen!"
+  version: "v3.1",
+  title: "Timecode-Locked Pinpoint Visibility",
+  description: "Spatial video pinpoints now strictly appear only at their specific timecode keyframe when paused, and automatically hide during video playback!"
 };
 
 // Safe Deterministic ID Generator
@@ -680,7 +680,6 @@ export default function App() {
     const rawX = Math.max(0, Math.min(nativeWidth, (clickX / renderWidth) * nativeWidth));
     const rawY = Math.max(0, Math.min(nativeHeight, (clickY / renderHeight) * nativeHeight));
 
-    // Calculate percentage relative to video container so it scales across devices
     const xPercent = Math.max(5, Math.min(92, ((clientX - rect.left) / elementWidth) * 100));
     const yPercent = Math.max(5, Math.min(90, ((clientY - rect.top) / elementHeight) * 100));
 
@@ -703,7 +702,6 @@ export default function App() {
 
     const coords = getCanvasCoordinates(e);
     
-    // Open floating inline pin pop-up overlay
     setActivePin({
       xPercent: coords.xPercent,
       yPercent: coords.yPercent,
@@ -1203,12 +1201,11 @@ export default function App() {
     return 0;
   });
 
-  // Active spatial pins visible on the video screen for current timecode or highlighted comment
+  // ⏱️ TIMECODE-LOCKED PINPOINTS (Only visible when paused at that keyframe)
   const activeFramePins = filteredComments.filter(c => 
-    c.pinLocation && (
-      c.id === highlightedCommentId || 
-      Math.abs(c.timestamp - currentTime) < 0.2
-    )
+    c.pinLocation && 
+    !isPlaying && 
+    Math.abs(c.timestamp - currentTime) < 0.25
   );
 
   const filteredVideos = videos.filter(v => {
@@ -1565,6 +1562,11 @@ export default function App() {
                   className="max-h-[60vh] lg:max-h-[70vh] w-full object-contain"
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                   onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
+                  onPlay={() => {
+                    setIsPlaying(true);
+                    setActivePin(null);
+                  }}
+                  onPause={() => setIsPlaying(false)}
                 />
 
                 <canvas
@@ -1583,7 +1585,7 @@ export default function App() {
                   }`}
                 />
 
-                {/* 📍 RENDER SAVED SPATIAL PIN MARKERS ON VIDEO FRAME */}
+                {/* 📍 RENDER SPATIAL PIN MARKERS ON VIDEO FRAME (Strictly when paused at keyframe) */}
                 {!isDrawingMode && activeFramePins.map(pinComment => (
                   <div
                     key={pinComment.id}
@@ -1606,7 +1608,7 @@ export default function App() {
                   </div>
                 ))}
 
-                {/* 📍 FLOATING INLINE PINPOPUP MODAL (Matching Screenshot) */}
+                {/* 📍 FLOATING INLINE PINPOPUP MODAL */}
                 {activePin && (
                   <div 
                     onClick={(e) => e.stopPropagation()}
@@ -1663,7 +1665,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* DRAWING TOOLBAR OVERLAY WITH UNDO & STROKE SIZE SELECTOR */}
+                {/* DRAWING TOOLBAR OVERLAY */}
                 <div 
                   onClick={(e) => e.stopPropagation()} 
                   className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1.5 rounded-lg shadow-lg z-20"
@@ -1867,7 +1869,7 @@ export default function App() {
               </div>
             </form>
 
-            {/* COMMENTS LIST (Clicking Card Jumps to Frame & Highlights Pinpoint) */}
+            {/* COMMENTS LIST */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[350px] lg:max-h-none">
               {sortedComments.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs">
