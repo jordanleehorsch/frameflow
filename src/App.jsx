@@ -25,6 +25,8 @@ const ALLOWED_ADMIN_EMAILS = [
 ];
 
 const ADMIN_PASSWORD = "Thrive1234";
+
+// Replace this string with your Google Cloud OAuth Client ID when ready
 const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
@@ -32,8 +34,8 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
   version: "v3.6",
-  title: "Consolidated Revision Email Notifications",
-  description: "When revisions are added, FrameFlow debounces comments for 2 minutes to bundle all feedback into a single email summary sent to jhorsch@thriverg.com."
+  title: "Consolidated Revision Email Notifications & Build Fix",
+  description: "Fixed JSX map syntax typo in authentication modal and enabled 2-minute debounced email digests for requested video changes."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -228,13 +230,11 @@ export default function App() {
       clearTimeout(emailDebounceTimersRef.current[vId]);
     }
 
-    // Wait 2 minutes (120,000 ms) after last comment before sending digest email
     emailDebounceTimersRef.current[vId] = setTimeout(() => {
       sendConsolidatedRevisionEmail(vId);
     }, 120000);
   };
 
-  // Flush remaining emails on tab close/unload
   useEffect(() => {
     const handleUnload = () => {
       Object.keys(sessionCommentsRef.current).forEach(vId => {
@@ -959,7 +959,6 @@ export default function App() {
     const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
 
-    // 📧 Queue for consolidated revision email notification
     queueCommentForEmailDigest(newComment, targetVidId);
   };
 
@@ -1044,7 +1043,6 @@ export default function App() {
       const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
       setVideos(updatedVideos);
 
-      // 📧 Queue for consolidated revision email notification
       queueCommentForEmailDigest(createdComment, targetVidId);
     }
     setCurrentPath([]);
@@ -1177,7 +1175,6 @@ export default function App() {
     const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
 
-    // 📧 Queue for consolidated revision email notification
     queueCommentForEmailDigest(createdComment, targetVidId);
   };
 
@@ -2361,7 +2358,8 @@ export default function App() {
                 >
                   <option value="">-- Select Admin Account --</option>
                   {ALLOWED_ADMIN_EMAILS.map(e => (
-                    <option key={e} value={e}>{e}</option>)}
+                    <option key={e} value={e}>{e}</option>
+                  ))}
                 </select>
               </div>
 
