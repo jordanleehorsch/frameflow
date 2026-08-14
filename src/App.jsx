@@ -25,17 +25,15 @@ const ALLOWED_ADMIN_EMAILS = [
 ];
 
 const ADMIN_PASSWORD = "Thrive1234";
-
-// Replace this string with your Google Cloud OAuth Client ID when ready
 const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v3.5",
-  title: "Folder Move Race Condition Fix",
-  description: "Fixed background live sync overwrites when moving videos to different folders, and isolated dropdown clicks from video card navigation."
+  version: "v3.6",
+  title: "Consolidated Revision Email Notifications",
+  description: "When revisions are added, FrameFlow debounces comments for 2 minutes to bundle all feedback into a single email summary sent to jhorsch@thriverg.com."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -86,11 +84,14 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoadRef = useRef(true);
   const isRemoteSyncRef = useRef(false);
-  const lastUserActionRef = useRef(0); // Pause live polling sync right after user updates
+  const lastUserActionRef = useRef(0);
+
+  // 📧 EMAIL DEBOUNCER STATE & REFS
+  const emailDebounceTimersRef = useRef({});
+  const sessionCommentsRef = useRef({});
 
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
 
-  // 🔐 GOOGLE & MANUAL AUTHENTICATION STATE
   const [user, setUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('frameflow_google_user') || 'null');
@@ -190,7 +191,61 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // 🔑 GOOGLE OAUTH CLIENT LOADER
+  // 📧 SEND CONSOLIDATED REVISION EMAIL
+  const sendConsolidatedRevisionEmail = (videoId) => {
+    const pendingList = sessionCommentsRef.current[videoId] || [];
+    if (pendingList.length === 0) return;
+
+    const targetVid = videos.find(v => v.id === videoId) || activeVideo;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?v=${encodeURIComponent(videoId)}`;
+
+    fetch('/api/notify-revisions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoTitle: targetVid?.title || 'Video Asset',
+        videoUrl: shareUrl,
+        authorName: authorName,
+        comments: pendingList
+      })
+    }).catch(err => console.error("Failed to trigger revision email:", err));
+
+    delete sessionCommentsRef.current[videoId];
+    delete emailDebounceTimersRef.current[videoId];
+  };
+
+  // ⏱️ QUEUE COMMENT AND DEBOUNCE EMAIL TRIGGER (2 Minutes)
+  const queueCommentForEmailDigest = (commentObj, vidId) => {
+    const vId = vidId || activeVideoId;
+    if (!vId) return;
+
+    if (!sessionCommentsRef.current[vId]) {
+      sessionCommentsRef.current[vId] = [];
+    }
+    sessionCommentsRef.current[vId].push(commentObj);
+
+    if (emailDebounceTimersRef.current[vId]) {
+      clearTimeout(emailDebounceTimersRef.current[vId]);
+    }
+
+    // Wait 2 minutes (120,000 ms) after last comment before sending digest email
+    emailDebounceTimersRef.current[vId] = setTimeout(() => {
+      sendConsolidatedRevisionEmail(vId);
+    }, 120000);
+  };
+
+  // Flush remaining emails on tab close/unload
+  useEffect(() => {
+    const handleUnload = () => {
+      Object.keys(sessionCommentsRef.current).forEach(vId => {
+        sendConsolidatedRevisionEmail(vId);
+      });
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [videos, authorName]);
+
   useEffect(() => {
     const handleGoogleResponse = (response) => {
       const payload = parseJwt(response.credential);
@@ -281,7 +336,6 @@ export default function App() {
     } catch(e) {}
   };
 
-  // 📂 ADD NEW BRAND FOLDER
   const handleCreateFolder = (e) => {
     e.preventDefault();
     if (!isAdmin) return;
@@ -301,7 +355,6 @@ export default function App() {
     setIsAddFolderModalOpen(false);
   };
 
-  // ✏️ RENAME EXISTING BRAND FOLDER
   const handleRenameFolderSubmit = (e) => {
     e.preventDefault();
     if (!isAdmin || !renameFolderTarget) return;
@@ -325,7 +378,6 @@ export default function App() {
     setIsRenameFolderModalOpen(false);
   };
 
-  // 🛡️ ADMIN RESTRICTED: Update Brand Folder for a Video
   const handleUpdateBrand = (videoId, newBrand, e) => {
     if (e) {
       e.stopPropagation();
@@ -341,7 +393,6 @@ export default function App() {
     setVideos(updatedVideos);
   };
 
-  // 🛡️ ADMIN RESTRICTED: Start Rename Title
   const startRenameVideo = (videoId, currentTitle, e) => {
     if (e) e.stopPropagation();
     if (!isAdmin) {
@@ -363,7 +414,6 @@ export default function App() {
     setEditingTitleId(null);
   };
 
-  // Auto-scroll to highlighted comment in list
   useEffect(() => {
     if (highlightedCommentId) {
       const el = document.getElementById(`comment-${highlightedCommentId}`);
@@ -373,7 +423,6 @@ export default function App() {
     }
   }, [highlightedCommentId]);
 
-  // DIRECT CLOUD SAVE FUNCTION
   const saveCloudDatabaseDirect = async (vList, dMap, cList, bList) => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
@@ -408,7 +457,6 @@ export default function App() {
     }
   };
 
-  // 1. INITIAL LOAD FROM VERCEL API RELAY
   useEffect(() => {
     const fetchAllBunnyCloudAssets = async () => {
       setIsSyncing(true);
@@ -549,12 +597,10 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Guarded against user action overwrites)
   useEffect(() => {
     if (!isDbLoaded) return;
 
     const liveSyncInterval = setInterval(async () => {
-      // Pause poll overwrite if syncing or if the user recently performed an action (4 seconds)
       if (isSyncing || (Date.now() - lastUserActionRef.current < 4000)) return;
 
       try {
@@ -660,7 +706,6 @@ export default function App() {
     return () => clearInterval(liveSyncInterval);
   }, [isDbLoaded, isSyncing]);
 
-  // 3. AUTO-SAVE ON STATE CHANGE
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
 
@@ -676,7 +721,6 @@ export default function App() {
     return () => clearTimeout(debounceSync);
   }, [videos, drawings, comments, brands, isDbLoaded]);
 
-  // 4. DEEP LINK RESOLUTION FOR SHARE LINKS
   useEffect(() => {
     const param = initialVideoParamRef.current;
     if (param && videos.length > 0) {
@@ -693,7 +737,6 @@ export default function App() {
     }
   }, [videos, isDbLoaded]);
 
-  // 5. KEEP URL IN SYNC
   useEffect(() => {
     if (currentView === 'review' && activeVideoId) {
       const newUrl = `${window.location.pathname}?v=${encodeURIComponent(activeVideoId)}`;
@@ -915,6 +958,9 @@ export default function App() {
 
     const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
+
+    // 📧 Queue for consolidated revision email notification
+    queueCommentForEmailDigest(newComment, targetVidId);
   };
 
   const startDrawing = (e) => {
@@ -970,13 +1016,15 @@ export default function App() {
              c.author === authorName
       );
 
+      let createdComment;
       if (existingSameAuthorIndex !== -1) {
         nextComments[existingSameAuthorIndex] = {
           ...nextComments[existingSameAuthorIndex],
           hasDrawing: true
         };
+        createdComment = nextComments[existingSameAuthorIndex];
       } else {
-        const newComment = {
+        createdComment = {
           id: 'c-' + Date.now(),
           videoId: targetVidId,
           timestamp: currentTime,
@@ -987,7 +1035,7 @@ export default function App() {
           createdAt: new Date().toISOString(),
           hasDrawing: true
         };
-        nextComments.push(newComment);
+        nextComments.push(createdComment);
       }
 
       setComments(nextComments);
@@ -995,6 +1043,9 @@ export default function App() {
       lastUserActionRef.current = Date.now();
       const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
       setVideos(updatedVideos);
+
+      // 📧 Queue for consolidated revision email notification
+      queueCommentForEmailDigest(createdComment, targetVidId);
     }
     setCurrentPath([]);
   };
@@ -1073,6 +1124,7 @@ export default function App() {
     const hasAuthorDrawingAtFrame = frameDrawings.some(d => d.author ? d.author === authorName : false);
 
     let nextComments = [...comments];
+    let createdComment;
 
     const placeholderIndex = nextComments.findIndex(
       c => c.videoId === targetVidId &&
@@ -1082,26 +1134,28 @@ export default function App() {
     );
 
     if (placeholderIndex !== -1) {
-      nextComments[placeholderIndex] = {
+      createdComment = {
         ...nextComments[placeholderIndex],
         author: authorName,
         text: commentText.trim(),
         hasDrawing: true
       };
+      nextComments[placeholderIndex] = createdComment;
     } else {
       const existingAuthorCommentIndex = nextComments.findIndex(
         c => c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.author === authorName
       );
 
       if (existingAuthorCommentIndex !== -1) {
-        nextComments[existingAuthorCommentIndex] = {
+        createdComment = {
           ...nextComments[existingAuthorCommentIndex],
           author: authorName,
           text: commentText.trim(),
           hasDrawing: nextComments[existingAuthorCommentIndex].hasDrawing || hasAuthorDrawingAtFrame
         };
+        nextComments[existingAuthorCommentIndex] = createdComment;
       } else {
-        const newComment = {
+        createdComment = {
           id: 'c-' + Date.now(),
           videoId: targetVidId,
           timestamp: currentTime,
@@ -1112,7 +1166,7 @@ export default function App() {
           createdAt: new Date().toISOString(),
           hasDrawing: hasAuthorDrawingAtFrame
         };
-        nextComments.push(newComment);
+        nextComments.push(createdComment);
       }
     }
 
@@ -1122,6 +1176,9 @@ export default function App() {
 
     const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
+
+    // 📧 Queue for consolidated revision email notification
+    queueCommentForEmailDigest(createdComment, targetVidId);
   };
 
   const toggleCommentComplete = (id, e) => {
@@ -2270,7 +2327,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 🔐 AUTHENTICATION MODAL (ENFORCED WITH PASSWORD Thrive1234) */}
+      {/* 🔐 AUTHENTICATION MODAL */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center">
@@ -2304,8 +2361,7 @@ export default function App() {
                 >
                   <option value="">-- Select Admin Account --</option>
                   {ALLOWED_ADMIN_EMAILS.map(e => (
-                    <option key={e} value={e}>{e}</option>
-                  ))}
+                    <option key={e} value={e}>{e}</option>)}
                 </select>
               </div>
 
