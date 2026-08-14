@@ -3,7 +3,8 @@ import {
   Play, Pause, Volume2, VolumeX, Maximize, Pencil, MessageSquare, 
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
-  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo, MapPin
+  Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo, MapPin,
+  Lock, LogIn, LogOut, ShieldCheck
 } from 'lucide-react';
 
 // ==========================================
@@ -14,13 +15,25 @@ const BUNNY_ACCESS_KEY = "d620773b-3709-413d-819288b64563-df1d-4b55";
 const BUNNY_STORAGE_API_URL = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}`;
 const BUNNY_PULL_ZONE_URL = "https://jordanhorsch.b-cdn.net/";
 
+// ==========================================
+// 🔐 AUTHORIZED ADMIN GOOGLE ACCOUNTS 🔐
+// ==========================================
+const ALLOWED_ADMIN_EMAILS = [
+  'jhorsch@thriverg.com',
+  'tramsey@thriverg.com',
+  'ceidson@thriverg.com'
+];
+
+// Replace with your Google Cloud Console OAuth Client ID
+const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v3.1",
-  title: "Timecode-Locked Pinpoint Visibility",
-  description: "Spatial video pinpoints now strictly appear only at their specific timecode keyframe when paused, and automatically hide during video playback!"
+  version: "v3.2",
+  title: "Google Sign-In & Role-Based Permissions",
+  description: "Only authorized signed-in accounts (jhorsch@thriverg.com, tramsey@thriverg.com, ceidson@thriverg.com) can add/delete videos, rename titles, or change folders."
 };
 
 // Safe Deterministic ID Generator
@@ -33,6 +46,23 @@ const getDeterministicId = (filenameOrUrl) => {
   const filename = str.split('/').pop().split('?')[0];
   const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
   return 'vid-' + decodeURIComponent(nameWithoutExt).toLowerCase().replace(/[^a-z0-9]/g, '_');
+};
+
+// Helper function to decode Google JWT token
+const parseJwt = (token) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
 };
 
 // Helper function to promote a video to the top of the list with a new status
@@ -59,6 +89,21 @@ export default function App() {
   const isRemoteSyncRef = useRef(false);
 
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
+
+  // 🔐 GOOGLE AUTHENTICATION STATE
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('frameflow_google_user') || 'null');
+    } catch(e) { return null; }
+  });
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Check if current user is an authorized admin
+  const isAdmin = Boolean(
+    user && 
+    user.email && 
+    ALLOWED_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(user.email.toLowerCase())
+  );
 
   const [brands] = useState(INITIAL_BRANDS);
   const [selectedBrand, setSelectedBrand] = useState('All');
@@ -89,7 +134,7 @@ export default function App() {
   const [isMouseDown, setIsMouseDown] = useState(false);
 
   // 📍 SPATIAL PINPOINT STATE
-  const [activePin, setActivePin] = useState(null); // { xPercent, yPercent, timestamp, timeFormatted }
+  const [activePin, setActivePin] = useState(null);
   const [inlinePinText, setInlinePinText] = useState('');
 
   const [comments, setComments] = useState(() => {
@@ -104,10 +149,10 @@ export default function App() {
   // 📌 HIGHLIGHTED COMMENT STATE
   const [highlightedCommentId, setHighlightedCommentId] = useState(null);
 
-  // 💾 DEVICE-SPECIFIC REVIEWER NAME
+  // 💾 REVIEWER NAME
   const [authorName, setAuthorName] = useState(() => {
     try {
-      return localStorage.getItem('frameflow_author_name') || 'Reviewer';
+      return user?.name || localStorage.getItem('frameflow_author_name') || 'Reviewer';
     } catch(e) { return 'Reviewer'; }
   });
 
@@ -136,6 +181,77 @@ export default function App() {
   const canvasRef = useRef(null);
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
+
+  // 🔑 GOOGLE IDENTITY SERVICES LOADER
+  useEffect(() => {
+    const handleGoogleResponse = (response) => {
+      const payload = parseJwt(response.credential);
+      if (payload && payload.email) {
+        const emailLower = payload.email.toLowerCase();
+        if (ALLOWED_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(emailLower)) {
+          const authUser = {
+            name: payload.name || emailLower.split('@')[0],
+            email: emailLower,
+            picture: payload.picture
+          };
+          setUser(authUser);
+          setAuthorName(authUser.name);
+          setIsLoginModalOpen(false);
+          try {
+            localStorage.setItem('frameflow_google_user', JSON.stringify(authUser));
+            localStorage.setItem('frameflow_author_name', authUser.name);
+          } catch (e) {}
+        } else {
+          alert(`🔒 Access Restricted:\n\n${payload.email} is not in the authorized admin list.\n\nAllowed Admins:\n• ${ALLOWED_ADMIN_EMAILS.join('\n• ')}`);
+        }
+      }
+    };
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleGoogleResponse
+        });
+      }
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    };
+  }, []);
+
+  // Render Google Login Button when modal opens
+  useEffect(() => {
+    if (isLoginModalOpen && window.google) {
+      setTimeout(() => {
+        const btnContainer = document.getElementById('googleSignInBtnModal');
+        if (btnContainer) {
+          btnContainer.innerHTML = '';
+          window.google.accounts.id.renderButton(btnContainer, {
+            theme: 'outline',
+            size: 'large',
+            width: 280,
+            text: 'signin_with'
+          });
+        }
+      }, 100);
+    }
+  }, [isLoginModalOpen]);
+
+  const handleSignOut = () => {
+    setUser(null);
+    try {
+      localStorage.removeItem('frameflow_google_user');
+    } catch(e) {}
+  };
 
   // Auto-scroll to highlighted comment in list
   useEffect(() => {
@@ -455,21 +571,32 @@ export default function App() {
     }
   }, [currentView, activeVideoId]);
 
+  // 🛡️ ADMIN RESTRICTED: Update Brand Folder
   const handleUpdateBrand = (videoId, newBrand, e) => {
     if (e) e.stopPropagation();
+    if (!isAdmin) {
+      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can change brand folders.");
+      return;
+    }
     const updatedVideos = videos.map(v => v.id === videoId ? { ...v, brand: newBrand } : v);
     setVideos(updatedVideos);
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
+  // 🛡️ ADMIN RESTRICTED: Start Rename Title
   const startRenameVideo = (videoId, currentTitle, e) => {
     if (e) e.stopPropagation();
+    if (!isAdmin) {
+      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can change video titles.");
+      return;
+    }
     setEditingTitleId(videoId);
     setTempTitleText(currentTitle);
   };
 
   const saveRenameVideo = (videoId, e) => {
     if (e) e.stopPropagation();
+    if (!isAdmin) return;
     if (tempTitleText.trim()) {
       const updatedVideos = videos.map(v => v.id === videoId ? { ...v, title: tempTitleText.trim() } : v);
       setVideos(updatedVideos);
@@ -526,8 +653,14 @@ export default function App() {
     }
   };
 
+  // 🛡️ ADMIN RESTRICTED: Delete Video
   const handleDeleteVideo = async (videoIdToDelete, e) => {
     if (e) e.stopPropagation();
+    if (!isAdmin) {
+      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can delete videos.");
+      return;
+    }
+
     const videoToDelete = videos.find(v => v.id === videoIdToDelete);
     if (!videoToDelete) return;
 
@@ -1036,8 +1169,14 @@ export default function App() {
     }
   };
 
+  // 🛡️ ADMIN RESTRICTED: Upload Video
   const handleUploadSubmit = (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can add videos.");
+      return;
+    }
+
     if (!newVideoUrl) {
       alert("Please select a video file or enter a valid video URL first.");
       return;
@@ -1065,9 +1204,14 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments);
   };
 
-  // 🔄 REPLACE VIDEO HANDLER
+  // 🛡️ ADMIN RESTRICTED: Replace Video
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can replace video cuts.");
+      return;
+    }
+
     if (!newVideoUrl) {
       alert("Please select a valid video file or enter a direct URL.");
       return;
@@ -1196,12 +1340,12 @@ export default function App() {
     } else if (commentSort === 'newest') {
       return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     } else if (commentSort === 'oldest') {
-      return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      return new Date(a.createdAt || 0) - new Date(a.createdAt || 0);
     }
     return 0;
   });
 
-  // ⏱️ TIMECODE-LOCKED PINPOINTS (Only visible when paused at that keyframe)
+  // ⏱️ TIMECODE-LOCKED PINPOINTS (Only visible when paused at keyframe)
   const activeFramePins = filteredComments.filter(c => 
     c.pinLocation && 
     !isPlaying && 
@@ -1264,12 +1408,60 @@ export default function App() {
           </div>
         </div>
 
-        <div className="hidden md:block p-3 border-t border-slate-800">
+        {/* SIDEBAR GOOGLE AUTHENTICATION & UPLOAD PANEL */}
+        <div className="p-3 border-t border-slate-800 space-y-2">
+          {user ? (
+            <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  {user.picture ? (
+                    <img src={user.picture} alt={user.name} className="w-7 h-7 rounded-full border border-indigo-400 flex-shrink-0" />
+                  ) : (
+                    <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                      {user.name.charAt(0)}
+                    </div>
+                  )}
+                  <div className="overflow-hidden">
+                    <div className="text-xs font-semibold text-white truncate">{user.name}</div>
+                    <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
+                      <ShieldCheck size={11} /> Admin Active
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleSignOut}
+                  title="Sign Out"
+                  className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-slate-700 transition flex-shrink-0"
+                >
+                  <LogOut size={14} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsLoginModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-semibold py-2 px-3 rounded-lg border border-slate-700 text-xs transition"
+            >
+              <LogIn size={14} /> Admin Google Sign-In
+            </button>
+          )}
+
+          {/* Upload Button: Active for Admins / Prompt Modal for Guests */}
           <button 
-            onClick={() => setIsUploadOpen(true)}
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 px-4 rounded-lg transition text-xs shadow-lg shadow-indigo-950"
+            onClick={() => {
+              if (!isAdmin) {
+                setIsLoginModalOpen(true);
+              } else {
+                setIsUploadOpen(true);
+              }
+            }}
+            className={`w-full flex items-center justify-center gap-2 font-medium py-2.5 px-4 rounded-lg transition text-xs shadow-lg ${
+              isAdmin 
+                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-950' 
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+            }`}
           >
-            <Plus size={16} /> Upload Asset
+            {isAdmin ? <Plus size={16} /> : <Lock size={14} />} Upload Asset
           </button>
         </div>
       </div>
@@ -1302,10 +1494,20 @@ export default function App() {
             </div>
 
             <button 
-              onClick={() => setIsUploadOpen(true)}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2 px-4 rounded-xl transition shadow-md whitespace-nowrap"
+              onClick={() => {
+                if (!isAdmin) {
+                  setIsLoginModalOpen(true);
+                } else {
+                  setIsUploadOpen(true);
+                }
+              }}
+              className={`w-full sm:w-auto flex items-center justify-center gap-2 text-xs font-semibold py-2 px-4 rounded-xl transition shadow-md whitespace-nowrap ${
+                isAdmin 
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white' 
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+              }`}
             >
-              <Plus size={16} /> Upload
+              {isAdmin ? <Plus size={16} /> : <Lock size={14} />} Upload
             </button>
           </div>
 
@@ -1382,7 +1584,7 @@ export default function App() {
 
                       <div className="p-3 flex items-start justify-between gap-2">
                         <div className="overflow-hidden flex-1">
-                          {editingTitleId === vid.id ? (
+                          {editingTitleId === vid.id && isAdmin ? (
                             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                               <input 
                                 type="text" 
@@ -1401,22 +1603,27 @@ export default function App() {
                               <div className="font-semibold text-xs text-slate-200 truncate group-hover:text-indigo-400 transition">
                                 {vid.title}
                               </div>
-                              <button 
-                                onClick={(e) => startRenameVideo(vid.id, vid.title, e)} 
-                                title="Rename Video"
-                                className="opacity-0 group-hover/title:opacity-100 text-slate-400 hover:text-white transition p-0.5"
-                              >
-                                <Pencil size={11} />
-                              </button>
+                              {isAdmin && (
+                                <button 
+                                  onClick={(e) => startRenameVideo(vid.id, vid.title, e)} 
+                                  title="Rename Video"
+                                  className="opacity-0 group-hover/title:opacity-100 text-slate-400 hover:text-white transition p-0.5"
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                              )}
                             </div>
                           )}
 
                           <div className="mt-1 flex items-center gap-1">
                             <select
                               value={vid.brand}
+                              disabled={!isAdmin}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => handleUpdateBrand(vid.id, e.target.value, e)}
-                              className="text-[16px] md:text-[10px] bg-slate-800 border border-slate-700/80 text-indigo-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium hover:bg-slate-700 transition"
+                              className={`text-[16px] md:text-[10px] bg-slate-800 border border-slate-700/80 text-indigo-300 rounded px-1.5 py-0.5 focus:outline-none font-medium ${
+                                isAdmin ? 'cursor-pointer hover:bg-slate-700' : 'cursor-not-allowed opacity-80'
+                              }`}
                             >
                               {brands.map(b => <option key={b} value={b}>{b}</option>)}
                             </select>
@@ -1427,18 +1634,22 @@ export default function App() {
                         <div className="flex items-center gap-1">
                           <button 
                             onClick={(e) => handleCopyLink(vid.id, e)}
-                            title="Copy Hive Link"
+                            title="Copy Link"
                             className="text-slate-500 hover:text-slate-200 p-1 rounded hover:bg-slate-800 transition"
                           >
                             <Share2 size={13} />
                           </button>
-                          <button 
-                            onClick={(e) => handleDeleteVideo(vid.id, e)}
-                            title="Delete Asset"
-                            className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-slate-800 transition"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          
+                          {/* Delete Protected for Admins */}
+                          {isAdmin && (
+                            <button 
+                              onClick={(e) => handleDeleteVideo(vid.id, e)}
+                              title="Delete Asset"
+                              className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-slate-800 transition"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1467,16 +1678,21 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <h1 
                     onClick={(e) => startRenameVideo(activeVideoId, activeVideo.title, e)}
-                    className="text-xs md:text-sm font-bold text-white hover:text-indigo-300 cursor-pointer transition truncate max-w-[180px] md:max-w-xs"
-                    title="Click to rename"
+                    className={`text-xs md:text-sm font-bold text-white transition truncate max-w-[180px] md:max-w-xs ${
+                      isAdmin ? 'hover:text-indigo-300 cursor-pointer' : ''
+                    }`}
+                    title={isAdmin ? "Click to rename" : "Asset Title"}
                   >
                     {activeVideo?.title}
                   </h1>
 
                   <select
                     value={activeVideo?.brand || 'Thrive'}
+                    disabled={!isAdmin}
                     onChange={(e) => handleUpdateBrand(activeVideoId, e.target.value)}
-                    className="text-[16px] md:text-[11px] bg-slate-800 border border-slate-700 text-indigo-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer font-medium hover:bg-slate-700 transition"
+                    className={`text-[16px] md:text-[11px] bg-slate-800 border border-slate-700 text-indigo-300 rounded-lg px-2 py-1 focus:outline-none font-medium ${
+                      isAdmin ? 'cursor-pointer hover:bg-slate-700' : 'cursor-not-allowed opacity-80'
+                    }`}
                   >
                     {brands.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
@@ -1522,24 +1738,28 @@ export default function App() {
                   )}
                 </button>
 
-                <button 
-                  onClick={() => {
-                    setNewVideoTitle(activeVideo?.title || '');
-                    setNewVideoUrl('');
-                    setUploadedFileName('');
-                    setIsReplaceOpen(true);
-                  }}
-                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
-                >
-                  <RotateCcw size={12} /> Replace
-                </button>
+                {isAdmin && (
+                  <button 
+                    onClick={() => {
+                      setNewVideoTitle(activeVideo?.title || '');
+                      setNewVideoUrl('');
+                      setUploadedFileName('');
+                      setIsReplaceOpen(true);
+                    }}
+                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                  >
+                    <RotateCcw size={12} /> Replace
+                  </button>
+                )}
 
-                <button 
-                  onClick={(e) => handleDeleteVideo(activeVideoId, e)}
-                  className="flex items-center gap-1 bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-800/80 text-xs font-medium py-1 px-2.5 rounded-lg transition"
-                >
-                  <Trash2 size={12} />
-                </button>
+                {isAdmin && (
+                  <button 
+                    onClick={(e) => handleDeleteVideo(activeVideoId, e)}
+                    className="flex items-center gap-1 bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-800/80 text-xs font-medium py-1 px-2.5 rounded-lg transition"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
 
                 <button 
                   onClick={generateAiActionPlan}
@@ -1585,7 +1805,7 @@ export default function App() {
                   }`}
                 />
 
-                {/* 📍 RENDER SPATIAL PIN MARKERS ON VIDEO FRAME (Strictly when paused at keyframe) */}
+                {/* 📍 RENDER SPATIAL PIN MARKERS ON VIDEO FRAME */}
                 {!isDrawingMode && activeFramePins.map(pinComment => (
                   <div
                     key={pinComment.id}
@@ -1608,7 +1828,7 @@ export default function App() {
                   </div>
                 ))}
 
-                {/* 📍 FLOATING INLINE PINPOPUP MODAL */}
+                {/* 📍 FLOATING INLINE PIN POPUP MODAL */}
                 {activePin && (
                   <div 
                     onClick={(e) => e.stopPropagation()}
@@ -1947,8 +2167,46 @@ export default function App() {
         </div>
       )}
 
+      {/* GOOGLE SIGN-IN MODAL */}
+      {isLoginModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <ShieldCheck size={16} className="text-indigo-400" /> Admin Authentication
+              </h3>
+              <button onClick={() => setIsLoginModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Sign in with an authorized Google account to manage video assets, upload files, or edit project folders.
+            </p>
+
+            <div className="py-3 flex justify-center min-h-[44px]">
+              <div id="googleSignInBtnModal"></div>
+            </div>
+
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-400 text-left space-y-1 font-mono">
+              <div className="text-indigo-400 font-bold mb-1">Authorized Admins:</div>
+              {ALLOWED_ADMIN_EMAILS.map(e => (
+                <div key={e} className="truncate">• {e}</div>
+              ))}
+            </div>
+
+            <button 
+              onClick={() => setIsLoginModalOpen(false)}
+              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition"
+            >
+              Continue as Guest Reviewer
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* UPLOAD MODAL */}
-      {isUploadOpen && (
+      {isUploadOpen && isAdmin && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -2048,7 +2306,7 @@ export default function App() {
       )}
 
       {/* REPLACE VIDEO MODAL */}
-      {isReplaceOpen && (
+      {isReplaceOpen && isAdmin && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
