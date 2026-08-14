@@ -26,16 +26,16 @@ const ALLOWED_ADMIN_EMAILS = [
 
 const ADMIN_PASSWORD = "Thrive1234";
 
-// Replace this string with your Google Cloud OAuth Client ID
+// Replace this string with your Google Cloud OAuth Client ID when ready
 const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v3.4",
-  title: "Password Auth Enforced & Google Sign-In Fix",
-  description: "Manual admin login now requires the Thrive1234 password. Includes instructions for fixing the Google OAuth 401 client error."
+  version: "v3.5",
+  title: "Folder Move Race Condition Fix",
+  description: "Fixed background live sync overwrites when moving videos to different folders, and isolated dropdown clicks from video card navigation."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -86,6 +86,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoadRef = useRef(true);
   const isRemoteSyncRef = useRef(false);
+  const lastUserActionRef = useRef(0); // Pause live polling sync right after user updates
 
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
 
@@ -260,11 +261,10 @@ export default function App() {
     }
   };
 
-  // 🔐 Password-protected manual login handler
   const handleManualEmailLogin = (e) => {
     e.preventDefault();
     if (!manualEmailInput.trim()) {
-      alert("Please enter your email address.");
+      alert("Please select or enter your email address.");
       return;
     }
     if (manualPasswordInput !== ADMIN_PASSWORD) {
@@ -281,6 +281,7 @@ export default function App() {
     } catch(e) {}
   };
 
+  // 📂 ADD NEW BRAND FOLDER
   const handleCreateFolder = (e) => {
     e.preventDefault();
     if (!isAdmin) return;
@@ -292,19 +293,15 @@ export default function App() {
       return;
     }
 
+    lastUserActionRef.current = Date.now();
     const updatedBrands = [...brands, cleanName];
     setBrands(updatedBrands);
     setSelectedBrand(cleanName);
     setNewFolderNameInput('');
     setIsAddFolderModalOpen(false);
-
-    try {
-      localStorage.setItem('frameflow_brands', JSON.stringify(updatedBrands));
-    } catch(e) {}
-
-    saveCloudDatabaseDirect(videos, drawings, comments, updatedBrands);
   };
 
+  // ✏️ RENAME EXISTING BRAND FOLDER
   const handleRenameFolderSubmit = (e) => {
     e.preventDefault();
     if (!isAdmin || !renameFolderTarget) return;
@@ -316,6 +313,7 @@ export default function App() {
       return;
     }
 
+    lastUserActionRef.current = Date.now();
     const updatedBrands = brands.map(b => b === renameFolderTarget ? cleanNewName : b);
     const updatedVideos = videos.map(v => v.brand === renameFolderTarget ? { ...v, brand: cleanNewName } : v);
 
@@ -325,14 +323,47 @@ export default function App() {
       setSelectedBrand(cleanNewName);
     }
     setIsRenameFolderModalOpen(false);
-
-    try {
-      localStorage.setItem('frameflow_brands', JSON.stringify(updatedBrands));
-    } catch(e) {}
-
-    saveCloudDatabaseDirect(updatedVideos, drawings, comments, updatedBrands);
   };
 
+  // 🛡️ ADMIN RESTRICTED: Update Brand Folder for a Video
+  const handleUpdateBrand = (videoId, newBrand, e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (!isAdmin) {
+      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can change brand folders.");
+      return;
+    }
+
+    lastUserActionRef.current = Date.now();
+    const updatedVideos = videos.map(v => v.id === videoId ? { ...v, brand: newBrand } : v);
+    setVideos(updatedVideos);
+  };
+
+  // 🛡️ ADMIN RESTRICTED: Start Rename Title
+  const startRenameVideo = (videoId, currentTitle, e) => {
+    if (e) e.stopPropagation();
+    if (!isAdmin) {
+      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can change video titles.");
+      return;
+    }
+    setEditingTitleId(videoId);
+    setTempTitleText(currentTitle);
+  };
+
+  const saveRenameVideo = (videoId, e) => {
+    if (e) e.stopPropagation();
+    if (!isAdmin) return;
+    if (tempTitleText.trim()) {
+      lastUserActionRef.current = Date.now();
+      const updatedVideos = videos.map(v => v.id === videoId ? { ...v, title: tempTitleText.trim() } : v);
+      setVideos(updatedVideos);
+    }
+    setEditingTitleId(null);
+  };
+
+  // Auto-scroll to highlighted comment in list
   useEffect(() => {
     if (highlightedCommentId) {
       const el = document.getElementById(`comment-${highlightedCommentId}`);
@@ -342,6 +373,7 @@ export default function App() {
     }
   }, [highlightedCommentId]);
 
+  // DIRECT CLOUD SAVE FUNCTION
   const saveCloudDatabaseDirect = async (vList, dMap, cList, bList) => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
@@ -376,6 +408,7 @@ export default function App() {
     }
   };
 
+  // 1. INITIAL LOAD FROM VERCEL API RELAY
   useEffect(() => {
     const fetchAllBunnyCloudAssets = async () => {
       setIsSyncing(true);
@@ -516,11 +549,13 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
+  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY (Guarded against user action overwrites)
   useEffect(() => {
     if (!isDbLoaded) return;
 
     const liveSyncInterval = setInterval(async () => {
-      if (isSyncing) return;
+      // Pause poll overwrite if syncing or if the user recently performed an action (4 seconds)
+      if (isSyncing || (Date.now() - lastUserActionRef.current < 4000)) return;
 
       try {
         const res = await fetch('/api/db');
@@ -625,6 +660,7 @@ export default function App() {
     return () => clearInterval(liveSyncInterval);
   }, [isDbLoaded, isSyncing]);
 
+  // 3. AUTO-SAVE ON STATE CHANGE
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
 
@@ -640,6 +676,7 @@ export default function App() {
     return () => clearTimeout(debounceSync);
   }, [videos, drawings, comments, brands, isDbLoaded]);
 
+  // 4. DEEP LINK RESOLUTION FOR SHARE LINKS
   useEffect(() => {
     const param = initialVideoParamRef.current;
     if (param && videos.length > 0) {
@@ -656,6 +693,7 @@ export default function App() {
     }
   }, [videos, isDbLoaded]);
 
+  // 5. KEEP URL IN SYNC
   useEffect(() => {
     if (currentView === 'review' && activeVideoId) {
       const newUrl = `${window.location.pathname}?v=${encodeURIComponent(activeVideoId)}`;
@@ -868,6 +906,7 @@ export default function App() {
       }
     };
 
+    lastUserActionRef.current = Date.now();
     const nextComments = [...comments, newComment];
     setComments(nextComments);
     setHighlightedCommentId(newComment.id);
@@ -876,8 +915,6 @@ export default function App() {
 
     const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
-
-    saveCloudDatabaseDirect(updatedVideos, drawings, nextComments, brands);
   };
 
   const startDrawing = (e) => {
@@ -955,10 +992,9 @@ export default function App() {
 
       setComments(nextComments);
 
+      lastUserActionRef.current = Date.now();
       const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
       setVideos(updatedVideos);
-
-      saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments, brands);
     }
     setCurrentPath([]);
   };
@@ -993,9 +1029,9 @@ export default function App() {
       }).filter(c => !(c.videoId === targetVidId && c.timestamp.toFixed(1) === timeKey && c.author === authorName && c.text === 'Canvas markup / drawing annotation added'));
     }
 
+    lastUserActionRef.current = Date.now();
     setDrawings(nextDrawings);
     setComments(nextComments);
-    saveCloudDatabaseDirect(videos, nextDrawings, nextComments, brands);
   };
 
   const renderCanvas = () => {
@@ -1080,28 +1116,19 @@ export default function App() {
       }
     }
 
+    lastUserActionRef.current = Date.now();
     setComments(nextComments);
     setCommentText('');
 
     const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
-
-    try {
-      localStorage.setItem('frameflow_comments', JSON.stringify(nextComments));
-      localStorage.setItem('frameflow_videos', JSON.stringify(updatedVideos));
-    } catch(e) {}
-
-    saveCloudDatabaseDirect(updatedVideos, drawings, nextComments, brands);
   };
 
   const toggleCommentComplete = (id, e) => {
     if (e) e.stopPropagation();
+    lastUserActionRef.current = Date.now();
     const updatedComments = comments.map(c => c.id === id ? { ...c, completed: !c.completed } : c);
     setComments(updatedComments);
-    try {
-      localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
-    } catch(e) {}
-    saveCloudDatabaseDirect(videos, drawings, updatedComments, brands);
   };
 
   const handleDeleteComment = async (commentId, e) => {
@@ -1138,15 +1165,9 @@ export default function App() {
       setHighlightedCommentId(null);
     }
 
+    lastUserActionRef.current = Date.now();
     setComments(updatedComments);
     setDrawings(nextDrawings);
-
-    try {
-      localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
-      localStorage.setItem('frameflow_drawings', JSON.stringify(nextDrawings));
-    } catch(e) {}
-
-    await saveCloudDatabaseDirect(videos, nextDrawings, updatedComments, brands);
   };
 
   const handleFileSelect = async (e) => {
@@ -1194,13 +1215,12 @@ export default function App() {
       duration: 30
     };
 
+    lastUserActionRef.current = Date.now();
     const updatedVideos = [newVideo, ...videos];
     setVideos(updatedVideos);
     setIsUploadOpen(false);
     resetUploadForm();
     openVideoReview(newVideo.id);
-
-    saveCloudDatabaseDirect(updatedVideos, drawings, comments, brands);
   };
 
   const handleReplaceSubmit = async (e) => {
@@ -1266,14 +1286,67 @@ export default function App() {
     });
     setComments(nextComments);
 
+    lastUserActionRef.current = Date.now();
     setHighlightedCommentId(null);
     setVideos(updatedVideos);
     setActiveVideoId(newId);
     setIsReplaceOpen(false);
     resetUploadForm();
-
-    await saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments, brands);
     setIsSyncing(false);
+  };
+
+  const handleDeleteVideo = async (videoIdToDelete, e) => {
+    if (e) e.stopPropagation();
+    if (!isAdmin) {
+      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can delete videos.");
+      return;
+    }
+
+    const videoToDelete = videos.find(v => v.id === videoIdToDelete);
+    if (!videoToDelete) return;
+
+    if (window.confirm(`Are you sure you want to delete "${videoToDelete.title}"? This will permanently delete the file from Bunny CDN.`)) {
+      setIsSyncing(true);
+
+      try {
+        const fileName = videoToDelete.url.split('/').pop();
+        if (fileName) {
+          const deleteUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${fileName}`;
+          await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: { 'AccessKey': BUNNY_ACCESS_KEY }
+          });
+        }
+      } catch (err) {
+        console.error("Error deleting file:", err);
+      }
+
+      lastUserActionRef.current = Date.now();
+      const updatedVideos = videos.filter(v => v.id !== videoIdToDelete);
+      setVideos(updatedVideos);
+
+      if (activeVideoId === videoIdToDelete) {
+        if (updatedVideos.length > 0) {
+          setActiveVideoId(updatedVideos[0].id);
+        } else {
+          setActiveVideoId('');
+          setCurrentView('dashboard');
+        }
+      }
+
+      setIsSyncing(false);
+    }
+  };
+
+  const handleUpdateStatus = (status) => {
+    lastUserActionRef.current = Date.now();
+    let updatedVideos;
+    if (status === 'Changes Requested') {
+      updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, status);
+    } else {
+      updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status } : v);
+    }
+    setVideos(updatedVideos);
   };
 
   const resetUploadForm = () => {
@@ -1645,7 +1718,12 @@ export default function App() {
                             <select
                               value={vid.brand}
                               disabled={!isAdmin}
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                              }}
                               onChange={(e) => handleUpdateBrand(vid.id, e.target.value, e)}
                               className={`text-[16px] md:text-[10px] bg-slate-800 border border-slate-700/80 text-indigo-300 rounded px-1.5 py-0.5 focus:outline-none font-medium ${
                                 isAdmin ? 'cursor-pointer hover:bg-slate-700' : 'cursor-not-allowed opacity-80'
@@ -1714,7 +1792,7 @@ export default function App() {
                   <select
                     value={activeVideo?.brand || 'Thrive'}
                     disabled={!isAdmin}
-                    onChange={(e) => handleUpdateBrand(activeVideoId, e.target.value)}
+                    onChange={(e) => handleUpdateBrand(activeVideoId, e.target.value, e)}
                     className={`text-[16px] md:text-[11px] bg-slate-800 border border-slate-700 text-indigo-300 rounded-lg px-2 py-1 focus:outline-none font-medium ${
                       isAdmin ? 'cursor-pointer hover:bg-slate-700' : 'cursor-not-allowed opacity-80'
                     }`}
@@ -2209,7 +2287,6 @@ export default function App() {
               Sign in with an authorized account to upload videos, delete assets, or create/rename project folders.
             </p>
 
-            {/* Render Google Button if configured */}
             {GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.includes("YOUR_GOOGLE_CLIENT_ID") && (
               <div className="py-1 flex justify-center min-h-[44px]">
                 <div id="googleSignInBtnModal"></div>
