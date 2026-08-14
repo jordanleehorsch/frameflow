@@ -4,7 +4,7 @@ import {
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
   Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo, MapPin,
-  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3
+  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound
 } from 'lucide-react';
 
 // ==========================================
@@ -16,7 +16,7 @@ const BUNNY_STORAGE_API_URL = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_Z
 const BUNNY_PULL_ZONE_URL = "https://jordanhorsch.b-cdn.net/";
 
 // ==========================================
-// 🔐 AUTHORIZED ADMIN GOOGLE ACCOUNTS 🔐
+// 🔐 AUTHORIZED ADMIN CREDENTIALS 🔐
 // ==========================================
 const ALLOWED_ADMIN_EMAILS = [
   'jhorsch@thriverg.com',
@@ -24,19 +24,20 @@ const ALLOWED_ADMIN_EMAILS = [
   'ceidson@thriverg.com'
 ];
 
-// Replace with your Google Cloud OAuth Client ID when ready
+const ADMIN_PASSWORD = "Thrive1234";
+
+// Replace this string with your Google Cloud OAuth Client ID
 const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v3.3",
-  title: "Admin Folder Management & Instant Auth Fallback",
-  description: "Signed-in admins can now create and rename brand folders in real time! Includes instant email bypass login to get around Google OAuth Client ID setup."
+  version: "v3.4",
+  title: "Password Auth Enforced & Google Sign-In Fix",
+  description: "Manual admin login now requires the Thrive1234 password. Includes instructions for fixing the Google OAuth 401 client error."
 };
 
-// Safe Deterministic ID Generator
 const getDeterministicId = (filenameOrUrl) => {
   if (!filenameOrUrl) return '';
   const str = String(filenameOrUrl);
@@ -88,7 +89,7 @@ export default function App() {
 
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
 
-  // 🔐 GOOGLE AUTHENTICATION STATE
+  // 🔐 GOOGLE & MANUAL AUTHENTICATION STATE
   const [user, setUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('frameflow_google_user') || 'null');
@@ -96,15 +97,14 @@ export default function App() {
   });
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [manualEmailInput, setManualEmailInput] = useState('');
+  const [manualPasswordInput, setManualPasswordInput] = useState('');
 
-  // Check if current user is an authorized admin
   const isAdmin = Boolean(
     user && 
     user.email && 
     ALLOWED_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(user.email.toLowerCase())
   );
 
-  // 📂 DYNAMIC BRAND FOLDERS STATE
   const [brands, setBrands] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('frameflow_brands') || 'null') || INITIAL_BRANDS;
@@ -112,7 +112,6 @@ export default function App() {
   });
   const [selectedBrand, setSelectedBrand] = useState('All');
 
-  // Folder Modal States
   const [isAddFolderModalOpen, setIsAddFolderModalOpen] = useState(false);
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
   const [isRenameFolderModalOpen, setIsRenameFolderModalOpen] = useState(false);
@@ -133,7 +132,6 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Drawing State
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#EF4444');
   const [strokeWidth, setStrokeWidth] = useState(8);
@@ -145,7 +143,6 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState([]);
   const [isMouseDown, setIsMouseDown] = useState(false);
 
-  // 📍 SPATIAL PINPOINT STATE
   const [activePin, setActivePin] = useState(null);
   const [inlinePinText, setInlinePinText] = useState('');
 
@@ -158,10 +155,8 @@ export default function App() {
   const [commentSort, setCommentSort] = useState('timestamp');
   const [commentText, setCommentText] = useState('');
 
-  // 📌 HIGHLIGHTED COMMENT STATE
   const [highlightedCommentId, setHighlightedCommentId] = useState(null);
 
-  // 💾 REVIEWER NAME
   const [authorName, setAuthorName] = useState(() => {
     try {
       return user?.name || localStorage.getItem('frameflow_author_name') || 'Reviewer';
@@ -199,33 +194,35 @@ export default function App() {
     const handleGoogleResponse = (response) => {
       const payload = parseJwt(response.credential);
       if (payload && payload.email) {
-        authenticateEmail(payload.email, payload.name, payload.picture);
+        authenticateEmail(payload.email, payload.name, payload.picture, true);
       }
     };
 
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      if (window.google) {
-        window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleGoogleResponse
-        });
-      }
-    };
-    document.body.appendChild(script);
+    if (GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.includes("YOUR_GOOGLE_CLIENT_ID")) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        if (window.google) {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleGoogleResponse
+          });
+        }
+      };
+      document.body.appendChild(script);
 
-    return () => {
-      if (document.body.contains(script)) {
-        document.body.removeChild(script);
-      }
-    };
+      return () => {
+        if (document.body.contains(script)) {
+          document.body.removeChild(script);
+        }
+      };
+    }
   }, []);
 
   useEffect(() => {
-    if (isLoginModalOpen && window.google) {
+    if (isLoginModalOpen && window.google && GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.includes("YOUR_GOOGLE_CLIENT_ID")) {
       setTimeout(() => {
         const btnContainer = document.getElementById('googleSignInBtnModal');
         if (btnContainer) {
@@ -241,8 +238,7 @@ export default function App() {
     }
   }, [isLoginModalOpen]);
 
-  // Auth helper for both Google JWT & Instant Fallback
-  const authenticateEmail = (email, name, picture) => {
+  const authenticateEmail = (email, name, picture, isGoogle = false) => {
     const emailLower = email.trim().toLowerCase();
     if (ALLOWED_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(emailLower)) {
       const authUser = {
@@ -254,6 +250,7 @@ export default function App() {
       setAuthorName(authUser.name);
       setIsLoginModalOpen(false);
       setManualEmailInput('');
+      setManualPasswordInput('');
       try {
         localStorage.setItem('frameflow_google_user', JSON.stringify(authUser));
         localStorage.setItem('frameflow_author_name', authUser.name);
@@ -263,11 +260,18 @@ export default function App() {
     }
   };
 
+  // 🔐 Password-protected manual login handler
   const handleManualEmailLogin = (e) => {
     e.preventDefault();
-    if (manualEmailInput.trim()) {
-      authenticateEmail(manualEmailInput, manualEmailInput.split('@')[0]);
+    if (!manualEmailInput.trim()) {
+      alert("Please enter your email address.");
+      return;
     }
+    if (manualPasswordInput !== ADMIN_PASSWORD) {
+      alert("❌ Incorrect Password. Please enter the correct admin password (Thrive1234).");
+      return;
+    }
+    authenticateEmail(manualEmailInput, manualEmailInput.split('@')[0]);
   };
 
   const handleSignOut = () => {
@@ -277,7 +281,6 @@ export default function App() {
     } catch(e) {}
   };
 
-  // 📂 ADD NEW BRAND FOLDER
   const handleCreateFolder = (e) => {
     e.preventDefault();
     if (!isAdmin) return;
@@ -302,7 +305,6 @@ export default function App() {
     saveCloudDatabaseDirect(videos, drawings, comments, updatedBrands);
   };
 
-  // ✏️ RENAME EXISTING BRAND FOLDER (Updates all assigned videos too)
   const handleRenameFolderSubmit = (e) => {
     e.preventDefault();
     if (!isAdmin || !renameFolderTarget) return;
@@ -314,10 +316,7 @@ export default function App() {
       return;
     }
 
-    // Update brands list
     const updatedBrands = brands.map(b => b === renameFolderTarget ? cleanNewName : b);
-    
-    // Update all assigned videos
     const updatedVideos = videos.map(v => v.brand === renameFolderTarget ? { ...v, brand: cleanNewName } : v);
 
     setBrands(updatedBrands);
@@ -334,7 +333,6 @@ export default function App() {
     saveCloudDatabaseDirect(updatedVideos, drawings, comments, updatedBrands);
   };
 
-  // Auto-scroll to highlighted comment in list
   useEffect(() => {
     if (highlightedCommentId) {
       const el = document.getElementById(`comment-${highlightedCommentId}`);
@@ -344,7 +342,6 @@ export default function App() {
     }
   }, [highlightedCommentId]);
 
-  // DIRECT CLOUD SAVE FUNCTION (Includes Brands)
   const saveCloudDatabaseDirect = async (vList, dMap, cList, bList) => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
     setIsSyncing(true);
@@ -379,7 +376,6 @@ export default function App() {
     }
   };
 
-  // 1. INITIAL LOAD FROM VERCEL API RELAY
   useEffect(() => {
     const fetchAllBunnyCloudAssets = async () => {
       setIsSyncing(true);
@@ -421,7 +417,6 @@ export default function App() {
           );
         }
 
-        // Merge Brands List
         const mergedBrands = Array.from(new Set([
           ...INITIAL_BRANDS,
           ...(cloudDb.brands || []),
@@ -521,7 +516,6 @@ export default function App() {
     fetchAllBunnyCloudAssets();
   }, []);
 
-  // 2. ⚡ 3-SECOND REAL-TIME POLLING via API RELAY
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -631,7 +625,6 @@ export default function App() {
     return () => clearInterval(liveSyncInterval);
   }, [isDbLoaded, isSyncing]);
 
-  // 3. AUTO-SAVE ON STATE CHANGE
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
 
@@ -647,7 +640,6 @@ export default function App() {
     return () => clearTimeout(debounceSync);
   }, [videos, drawings, comments, brands, isDbLoaded]);
 
-  // 4. DEEP LINK RESOLUTION FOR SHARE LINKS
   useEffect(() => {
     const param = initialVideoParamRef.current;
     if (param && videos.length > 0) {
@@ -664,7 +656,6 @@ export default function App() {
     }
   }, [videos, isDbLoaded]);
 
-  // 5. KEEP URL IN SYNC
   useEffect(() => {
     if (currentView === 'review' && activeVideoId) {
       const newUrl = `${window.location.pathname}?v=${encodeURIComponent(activeVideoId)}`;
@@ -693,7 +684,6 @@ export default function App() {
     }
   };
 
-  // 📥 DIRECT BLOB DOWNLOAD HANDLER
   const handleDownloadVideo = async (e) => {
     if (e) e.stopPropagation();
     if (!activeVideo?.url) return;
@@ -782,7 +772,6 @@ export default function App() {
     setCurrentView('review');
   };
 
-  // 🎯 ACCURATE TOUCH & MOUSE CANVAS COORDINATE CALCULATOR
   const getCanvasCoordinates = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0, xPercent: 0, yPercent: 0 };
@@ -839,7 +828,6 @@ export default function App() {
     };
   };
 
-  // 📍 SPATIAL PINPOINT INTERACTION ON VIDEO CLICK
   const handleCanvasClick = (e) => {
     if (isDrawingMode) return;
 
@@ -859,7 +847,6 @@ export default function App() {
     setInlinePinText('');
   };
 
-  // 📍 SUBMIT SPATIAL PINPOINT NOTE
   const handlePostInlinePinComment = (e) => {
     if (e) e.preventDefault();
     if (!inlinePinText.trim() || !activePin || !activeVideo) return;
@@ -890,7 +877,7 @@ export default function App() {
     const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
     setVideos(updatedVideos);
 
-    saveCloudDatabaseDirect(updatedVideos, drawings, nextComments);
+    saveCloudDatabaseDirect(updatedVideos, drawings, nextComments, brands);
   };
 
   const startDrawing = (e) => {
@@ -971,12 +958,11 @@ export default function App() {
       const updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, 'Changes Requested');
       setVideos(updatedVideos);
 
-      saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments);
+      saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments, brands);
     }
     setCurrentPath([]);
   };
 
-  // ↩️ UNDO LAST DRAWING STROKE
   const handleUndoDrawing = () => {
     if (!activeVideo) return;
     const targetVidId = activeVideo.id;
@@ -1009,7 +995,7 @@ export default function App() {
 
     setDrawings(nextDrawings);
     setComments(nextComments);
-    saveCloudDatabaseDirect(videos, nextDrawings, nextComments);
+    saveCloudDatabaseDirect(videos, nextDrawings, nextComments, brands);
   };
 
   const renderCanvas = () => {
@@ -1105,7 +1091,7 @@ export default function App() {
       localStorage.setItem('frameflow_videos', JSON.stringify(updatedVideos));
     } catch(e) {}
 
-    saveCloudDatabaseDirect(updatedVideos, drawings, nextComments);
+    saveCloudDatabaseDirect(updatedVideos, drawings, nextComments, brands);
   };
 
   const toggleCommentComplete = (id, e) => {
@@ -1115,10 +1101,9 @@ export default function App() {
     try {
       localStorage.setItem('frameflow_comments', JSON.stringify(updatedComments));
     } catch(e) {}
-    saveCloudDatabaseDirect(videos, drawings, updatedComments);
+    saveCloudDatabaseDirect(videos, drawings, updatedComments, brands);
   };
 
-  // 🗑️ DELETE COMMENT & CANVAS MARKUP SYNCHRONIZED HANDLER
   const handleDeleteComment = async (commentId, e) => {
     if (e) e.stopPropagation();
 
@@ -1161,7 +1146,7 @@ export default function App() {
       localStorage.setItem('frameflow_drawings', JSON.stringify(nextDrawings));
     } catch(e) {}
 
-    await saveCloudDatabaseDirect(videos, nextDrawings, updatedComments);
+    await saveCloudDatabaseDirect(videos, nextDrawings, updatedComments, brands);
   };
 
   const handleFileSelect = async (e) => {
@@ -1184,7 +1169,6 @@ export default function App() {
     }
   };
 
-  // 🛡️ ADMIN RESTRICTED: Upload Video
   const handleUploadSubmit = (e) => {
     e.preventDefault();
     if (!isAdmin) {
@@ -1216,10 +1200,9 @@ export default function App() {
     resetUploadForm();
     openVideoReview(newVideo.id);
 
-    saveCloudDatabaseDirect(updatedVideos, drawings, comments);
+    saveCloudDatabaseDirect(updatedVideos, drawings, comments, brands);
   };
 
-  // 🛡️ ADMIN RESTRICTED: Replace Video
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!isAdmin) {
@@ -1289,7 +1272,7 @@ export default function App() {
     setIsReplaceOpen(false);
     resetUploadForm();
 
-    await saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments);
+    await saveCloudDatabaseDirect(updatedVideos, nextDrawings, nextComments, brands);
     setIsSyncing(false);
   };
 
@@ -1310,14 +1293,12 @@ export default function App() {
     }
   };
 
-  // 📌 PINPOINT CLICK HANDLER
   const handlePinpointClick = (comment, e) => {
     if (e) e.stopPropagation();
     jumpToTime(comment.timestamp);
     setHighlightedCommentId(comment.id);
   };
 
-  // 💬 COMMENT CARD CLICK HANDLER
   const handleCommentCardClick = (comment) => {
     jumpToTime(comment.timestamp);
     setHighlightedCommentId(comment.id);
@@ -1360,7 +1341,6 @@ export default function App() {
     return 0;
   });
 
-  // ⏱️ TIMECODE-LOCKED PINPOINTS (Only visible when paused at keyframe)
   const activeFramePins = filteredComments.filter(c => 
     c.pinLocation && 
     !isPlaying && 
@@ -1415,7 +1395,6 @@ export default function App() {
             <div className="flex items-center justify-between">
               <label className="text-[10px] md:text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Brand Workspace</label>
               
-              {/* Admin Folder Actions */}
               {isAdmin && (
                 <div className="flex items-center gap-1">
                   <button
@@ -1490,11 +1469,10 @@ export default function App() {
               onClick={() => setIsLoginModalOpen(true)}
               className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-semibold py-2 px-3 rounded-lg border border-slate-700 text-xs transition"
             >
-              <LogIn size={14} /> Admin Google Sign-In
+              <LogIn size={14} /> Admin Sign-In
             </button>
           )}
 
-          {/* Upload Button: Active for Admins / Prompt Modal for Guests */}
           <button 
             onClick={() => {
               if (!isAdmin) {
@@ -1688,7 +1666,6 @@ export default function App() {
                             <Share2 size={13} />
                           </button>
                           
-                          {/* Delete Protected for Admins */}
                           {isAdmin && (
                             <button 
                               onClick={(e) => handleDeleteVideo(vid.id, e)}
@@ -2215,7 +2192,7 @@ export default function App() {
         </div>
       )}
 
-      {/* GOOGLE SIGN-IN MODAL (WITH INSTANT FALLBACK) */}
+      {/* 🔐 AUTHENTICATION MODAL (ENFORCED WITH PASSWORD Thrive1234) */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center">
@@ -2232,40 +2209,56 @@ export default function App() {
               Sign in with an authorized account to upload videos, delete assets, or create/rename project folders.
             </p>
 
-            <div className="py-1 flex justify-center min-h-[44px]">
-              <div id="googleSignInBtnModal"></div>
-            </div>
+            {/* Render Google Button if configured */}
+            {GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.includes("YOUR_GOOGLE_CLIENT_ID") && (
+              <div className="py-1 flex justify-center min-h-[44px]">
+                <div id="googleSignInBtnModal"></div>
+              </div>
+            )}
 
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-slate-800"></div>
-              <span className="flex-shrink mx-2 text-slate-500 text-[10px] uppercase font-semibold">Or Instant Access</span>
-              <div className="flex-grow border-t border-slate-800"></div>
-            </div>
+            {/* PASSWORD PROTECTED MANUAL LOGIN FORM */}
+            <form onSubmit={handleManualEmailLogin} className="space-y-3 text-left bg-slate-950/60 p-3.5 border border-slate-800 rounded-xl">
+              <div>
+                <label className="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Authorized Email Address</label>
+                <select
+                  value={manualEmailInput}
+                  onChange={(e) => setManualEmailInput(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="">-- Select Admin Account --</option>
+                  {ALLOWED_ADMIN_EMAILS.map(e => (
+                    <option key={e} value={e}>{e}</option>
+                  ))}
+                </select>
+              </div>
 
-            {/* INSTANT EMAIL LOGIN FORM */}
-            <form onSubmit={handleManualEmailLogin} className="space-y-2 text-left">
-              <label className="text-[10px] text-slate-400 font-semibold uppercase">Authorized Email Address</label>
-              <input 
-                type="email" 
-                placeholder="e.g. jhorsch@thriverg.com"
-                value={manualEmailInput}
-                onChange={(e) => setManualEmailInput(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
-              />
+              <div>
+                <label className="text-[10px] text-slate-400 font-semibold uppercase block mb-1 flex items-center gap-1">
+                  <KeyRound size={11} className="text-indigo-400" /> Admin Password
+                </label>
+                <input 
+                  type="password" 
+                  placeholder="Enter Password (Thrive1234)"
+                  value={manualPasswordInput}
+                  onChange={(e) => setManualPasswordInput(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
               <button 
                 type="submit"
-                className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs transition shadow"
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs transition shadow shadow-indigo-950"
               >
                 Sign In as Admin
               </button>
             </form>
 
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-[10px] text-slate-400 text-left space-y-1 font-mono">
-              <div className="text-indigo-400 font-bold mb-1">Authorized Admin List:</div>
-              {ALLOWED_ADMIN_EMAILS.map(e => (
-                <div key={e} className="truncate">• {e}</div>
-              ))}
-            </div>
+            <button 
+              onClick={() => setIsLoginModalOpen(false)}
+              className="w-full py-1.5 text-slate-400 hover:text-slate-200 text-[11px] font-medium transition"
+            >
+              Continue as Guest Reviewer
+            </button>
           </div>
         </div>
       )}
