@@ -31,9 +31,9 @@ const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v3.8",
-  title: "CEP Panel High-Contrast UI Fix",
-  description: "Fixed dark text contrast and modal backdrop bleed in Premiere Pro embedded panel."
+  version: "v3.9",
+  title: "CEP Force High-Contrast Color Overrides",
+  description: "Applied forced CSS brightness rules to prevent Premiere Pro CEP Chromium engine from dimming UI text and placeholders."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -1505,6 +1505,31 @@ export default function App() {
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
+      {/* 🚨 FORCED CSS OVERRIDES FOR ADOBE CEP CHROMIUM EMBEDDED PANELS 🚨 */}
+      <style>{`
+        body, div, span, p, label, select, input, button {
+          color-scheme: dark !important;
+        }
+        .cep-bright-label {
+          color: #F8FAFC !important;
+        }
+        .cep-subtext {
+          color: #CBD5E1 !important;
+        }
+        select, input {
+          color: #FFFFFF !important;
+          background-color: #1E293B !important;
+        }
+        select option {
+          background-color: #0F172A !important;
+          color: #FFFFFF !important;
+        }
+        input::placeholder {
+          color: #94A3B8 !important;
+          opacity: 1 !important;
+        }
+      `}</style>
+      
       {/* GLOBAL SIDEBAR */}
       <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
@@ -1513,11 +1538,11 @@ export default function App() {
               <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-base md:text-lg shadow-lg shadow-indigo-950">FF</div>
               <div>
                 <div className="font-bold text-sm md:text-base tracking-wide text-white leading-none">FrameFlow</div>
-                <div className="text-[10px] text-slate-300 mt-1 font-medium">Video Studio Pro</div>
+                <div className="text-[10px] cep-subtext mt-1 font-semibold">Video Studio Pro</div>
               </div>
             </div>
 
-            <div className="text-slate-400" title={isSyncing ? "Syncing..." : "Live Relay Active"}>
+            <div className="text-slate-200" title={isSyncing ? "Syncing..." : "Live Relay Active"}>
               {isSyncing ? (
                 <Loader2 size={14} className="animate-spin text-indigo-400" />
               ) : (
@@ -1532,7 +1557,7 @@ export default function App() {
               className={`w-full flex items-center justify-center md:justify-start gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
                 currentView === 'dashboard' 
                   ? 'bg-indigo-600 text-white shadow-md' 
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  : 'text-slate-200 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <Home size={15} /> Home
@@ -1542,16 +1567,16 @@ export default function App() {
           {/* 📂 BRAND WORKSPACE & ADMIN FOLDER MANAGEMENT */}
           <div className="px-3 py-2 md:px-4 md:py-3 border-t border-slate-800/80 space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[10px] md:text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Brand Workspace</label>
+              <label className="text-[10px] md:text-[11px] font-bold text-white uppercase tracking-wider block cep-bright-label">Brand Workspace</label>
               
               {isAdmin && (
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setIsAddFolderModalOpen(true)}
                     title="Add New Brand Folder"
-                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-0.5 hover:bg-slate-800 px-1.5 py-0.5 rounded transition"
+                    className="text-xs text-indigo-300 hover:text-indigo-200 flex items-center gap-0.5 hover:bg-slate-800 px-1.5 py-0.5 rounded transition font-bold"
                   >
-                    <FolderPlus size={13} /> <span className="text-[10px] font-semibold">+ Folder</span>
+                    <FolderPlus size={13} /> <span className="text-[10px]">+ Folder</span>
                   </button>
                 </div>
               )}
@@ -1561,8 +1586,7 @@ export default function App() {
               <select 
                 value={selectedBrand} 
                 onChange={(e) => setSelectedBrand(e.target.value)}
-                style={{ colorScheme: 'dark' }}
-                className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 text-[16px] md:text-xs rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                className="flex-1 bg-slate-800 border border-slate-700 text-white font-semibold text-[16px] md:text-xs rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
               >
                 <option value="All">All Concepts ({videos.length})</option>
                 {brands.map(b => <option key={b} value={b}>{b}</option>)}
@@ -1576,7 +1600,7 @@ export default function App() {
                     setIsRenameFolderModalOpen(true);
                   }}
                   title={`Rename "${selectedBrand}" Folder`}
-                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition"
+                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition"
                 >
                   <Edit3 size={14} />
                 </button>
@@ -1588,7 +1612,7 @@ export default function App() {
         {/* SIDEBAR GOOGLE AUTHENTICATION & UPLOAD PANEL */}
         <div className="p-3 border-t border-slate-800 space-y-2">
           {user ? (
-            <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-2.5 space-y-2">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-2.5 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 overflow-hidden">
                   {user.picture ? (
@@ -1599,8 +1623,8 @@ export default function App() {
                     </div>
                   )}
                   <div className="overflow-hidden">
-                    <div className="text-xs font-semibold text-white truncate">{user.name}</div>
-                    <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
+                    <div className="text-xs font-bold text-white truncate">{user.name}</div>
+                    <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-bold">
                       <ShieldCheck size={11} /> Admin Active
                     </div>
                   </div>
@@ -1608,7 +1632,7 @@ export default function App() {
                 <button 
                   onClick={handleSignOut}
                   title="Sign Out"
-                  className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-slate-700 transition flex-shrink-0"
+                  className="text-slate-300 hover:text-red-400 p-1 rounded hover:bg-slate-700 transition flex-shrink-0"
                 >
                   <LogOut size={14} />
                 </button>
@@ -1617,7 +1641,7 @@ export default function App() {
           ) : (
             <button
               onClick={() => setIsLoginModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-semibold py-2 px-3 rounded-lg border border-slate-700 text-xs transition"
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-indigo-200 font-bold py-2 px-3 rounded-lg border border-slate-700 text-xs transition"
             >
               <LogIn size={14} /> Admin Sign-In
             </button>
@@ -1631,10 +1655,10 @@ export default function App() {
                 setIsUploadOpen(true);
               }
             }}
-            className={`w-full flex items-center justify-center gap-2 font-medium py-2.5 px-4 rounded-lg transition text-xs shadow-lg ${
+            className={`w-full flex items-center justify-center gap-2 font-bold py-2.5 px-4 rounded-lg transition text-xs shadow-lg ${
               isAdmin 
                 ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-950' 
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                : 'bg-slate-800 text-slate-100 hover:bg-slate-700 border border-slate-700'
             }`}
           >
             {isAdmin ? <Plus size={16} /> : <Lock size={14} />} Upload Asset
@@ -1646,25 +1670,23 @@ export default function App() {
       {currentView === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950">
           
-          <div className="h-auto md:h-16 border-b border-slate-800 p-3 md:px-8 flex flex-col sm:flex-row items-center justify-between bg-slate-900/80 sticky top-0 backdrop-blur z-20 gap-2 sm:gap-4">
+          <div className="h-auto md:h-16 border-b border-slate-800 p-3 md:px-8 flex flex-col sm:flex-row items-center justify-between bg-slate-900 sticky top-0 backdrop-blur z-20 gap-2 sm:gap-4">
             <div className="flex items-center gap-2 w-full max-w-lg">
               <div className="relative flex-1">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
                 <input 
                   type="text" 
                   placeholder="Search videos, brands..." 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-[16px] md:text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-[16px] md:text-xs text-white placeholder-slate-300 focus:outline-none focus:border-indigo-500 transition font-medium"
                 />
               </div>
 
               <select 
                 value={selectedBrand} 
                 onChange={(e) => setSelectedBrand(e.target.value)}
-                style={{ colorScheme: 'dark' }}
-                className="bg-slate-900 border border-slate-700 text-indigo-300 text-[16px] md:text-xs rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium"
+                className="bg-slate-800 border border-slate-700 text-indigo-200 text-[16px] md:text-xs rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500 cursor-pointer font-bold"
               >
                 <option value="All">All Folders</option>
                 {brands.map(b => <option key={b} value={b}>{b}</option>)}
@@ -1679,10 +1701,10 @@ export default function App() {
                   setIsUploadOpen(true);
                 }
               }}
-              className={`w-full sm:w-auto flex items-center justify-center gap-2 text-xs font-semibold py-2 px-4 rounded-xl transition shadow-md whitespace-nowrap ${
+              className={`w-full sm:w-auto flex items-center justify-center gap-2 text-xs font-bold py-2 px-4 rounded-xl transition shadow-md whitespace-nowrap ${
                 isAdmin 
                   ? 'bg-indigo-600 hover:bg-indigo-500 text-white' 
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  : 'bg-slate-800 text-white hover:bg-slate-700 border border-slate-700'
               }`}
             >
               {isAdmin ? <Plus size={16} /> : <Lock size={14} />} Upload
@@ -1692,7 +1714,7 @@ export default function App() {
           <div className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
             
             {showUpdateBanner && (
-              <div className="bg-indigo-950 border border-indigo-500/40 rounded-xl p-4 flex items-start justify-between gap-3 text-xs shadow-lg relative overflow-hidden">
+              <div className="bg-indigo-950 border border-indigo-500/60 rounded-xl p-4 flex items-start justify-between gap-3 text-xs shadow-lg relative overflow-hidden">
                 <div className="flex items-start gap-3">
                   <div className="p-2 bg-indigo-600 rounded-lg text-white flex-shrink-0 mt-0.5 shadow-md">
                     <Sparkles size={16} />
@@ -1700,16 +1722,16 @@ export default function App() {
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-white text-sm">{LATEST_APP_UPDATE.title}</span>
-                      <span className="bg-indigo-600/60 text-indigo-200 text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold">{LATEST_APP_UPDATE.version}</span>
+                      <span className="bg-indigo-600 text-white text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">{LATEST_APP_UPDATE.version}</span>
                     </div>
-                    <p className="text-slate-200 mt-1 leading-relaxed">
+                    <p className="text-slate-200 mt-1 leading-relaxed font-medium">
                       {LATEST_APP_UPDATE.description}
                     </p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setShowUpdateBanner(false)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-indigo-900/50 transition flex-shrink-0"
+                  className="text-slate-300 hover:text-white p-1 rounded-lg hover:bg-indigo-900 transition flex-shrink-0"
                   title="Dismiss Announcement"
                 >
                   <X size={16} />
@@ -1719,12 +1741,12 @@ export default function App() {
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-bold text-slate-200 tracking-wide">Recents</h2>
-                <span className="text-xs text-slate-400">{filteredVideos.length} Assets</span>
+                <h2 className="text-sm font-bold text-white tracking-wide">Recents</h2>
+                <span className="text-xs text-slate-300 font-bold">{filteredVideos.length} Assets</span>
               </div>
 
               {filteredVideos.length === 0 ? (
-                <div className="p-12 border border-dashed border-slate-800 rounded-2xl text-center text-slate-400 text-xs">
+                <div className="p-12 border border-dashed border-slate-700 rounded-2xl text-center text-slate-300 text-xs font-semibold">
                   No assets found in Bunny CDN. Click Upload to add your first video!
                 </div>
               ) : (
@@ -1745,15 +1767,15 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="absolute bottom-2 right-2 bg-black/80 px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-200">
+                        <div className="absolute bottom-2 right-2 bg-black/80 px-1.5 py-0.5 rounded text-[10px] font-mono text-white font-bold">
                           {formatTime(vid.duration)}
                         </div>
 
                         <div className="absolute top-2 left-2">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-medium shadow ${
-                            vid.status === 'Approved' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
-                            vid.status === 'Changes Requested' ? 'bg-amber-950 text-amber-400 border border-amber-800' :
-                            'bg-indigo-950 text-indigo-400 border border-indigo-800'
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold shadow ${
+                            vid.status === 'Approved' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' :
+                            vid.status === 'Changes Requested' ? 'bg-amber-950 text-amber-300 border border-amber-800' :
+                            'bg-indigo-950 text-indigo-300 border border-indigo-800'
                           }`}>
                             {vid.status}
                           </span>
@@ -1770,8 +1792,7 @@ export default function App() {
                                 onChange={(e) => setTempTitleText(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && saveRenameVideo(vid.id, e)}
                                 autoFocus
-                                style={{ colorScheme: 'dark' }}
-                                className="w-full bg-slate-800 border border-indigo-500 rounded text-[16px] md:text-xs px-1.5 py-0.5 text-white focus:outline-none"
+                                className="w-full bg-slate-800 border border-indigo-500 rounded text-[16px] md:text-xs px-1.5 py-0.5 text-white font-bold focus:outline-none"
                               />
                               <button onClick={(e) => saveRenameVideo(vid.id, e)} className="text-emerald-400 p-0.5 hover:bg-slate-800 rounded">
                                 <Check size={14} />
@@ -1779,14 +1800,14 @@ export default function App() {
                             </div>
                           ) : (
                             <div className="flex items-center gap-1 group/title">
-                              <div className="font-semibold text-xs text-slate-200 truncate group-hover:text-indigo-400 transition">
+                              <div className="font-bold text-xs text-white truncate group-hover:text-indigo-300 transition">
                                 {vid.title}
                               </div>
                               {isAdmin && (
                                 <button 
                                   onClick={(e) => startRenameVideo(vid.id, vid.title, e)} 
                                   title="Rename Video"
-                                  className="opacity-0 group-hover/title:opacity-100 text-slate-400 hover:text-white transition p-0.5"
+                                  className="opacity-0 group-hover/title:opacity-100 text-slate-300 hover:text-white transition p-0.5"
                                 >
                                   <Pencil size={11} />
                                 </button>
@@ -1801,14 +1822,13 @@ export default function App() {
                               onClick={(e) => e.stopPropagation()}
                               onMouseDown={(e) => e.stopPropagation()}
                               onChange={(e) => handleUpdateBrand(vid.id, e.target.value, e)}
-                              style={{ colorScheme: 'dark' }}
-                              className={`text-[16px] md:text-[10px] bg-slate-800 border border-slate-700/80 text-indigo-300 rounded px-1.5 py-0.5 focus:outline-none font-medium ${
+                              className={`text-[16px] md:text-[10px] bg-slate-800 border border-slate-700 text-indigo-200 rounded px-1.5 py-0.5 focus:outline-none font-bold ${
                                 isAdmin ? 'cursor-pointer hover:bg-slate-700' : 'cursor-not-allowed opacity-80'
                               }`}
                             >
                               {brands.map(b => <option key={b} value={b}>{b}</option>)}
                             </select>
-                            <span className="text-[10px] text-slate-400">• {new Date(vid.createdAt).toLocaleDateString()}</span>
+                            <span className="text-[10px] text-slate-300 font-semibold">• {new Date(vid.createdAt).toLocaleDateString()}</span>
                           </div>
                         </div>
 
@@ -1816,7 +1836,7 @@ export default function App() {
                           <button 
                             onClick={(e) => handleCopyLink(vid.id, e)}
                             title="Copy Link"
-                            className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition"
+                            className="text-slate-300 hover:text-white p-1 rounded hover:bg-slate-800 transition"
                           >
                             <Share2 size={13} />
                           </button>
@@ -1825,7 +1845,7 @@ export default function App() {
                             <button 
                               onClick={(e) => handleDeleteVideo(vid.id, e)}
                               title="Delete Asset"
-                              className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-slate-800 transition"
+                              className="text-slate-300 hover:text-red-400 p-1 rounded hover:bg-slate-800 transition"
                             >
                               <Trash2 size={13} />
                             </button>
@@ -1846,11 +1866,11 @@ export default function App() {
         <div className="flex-1 flex flex-col lg:flex-row bg-slate-950 min-w-0 overflow-y-auto lg:overflow-hidden">
           
           <div className="flex-1 flex flex-col min-w-0">
-            <div className="p-3 lg:px-6 lg:py-3 border-b border-slate-800 bg-slate-900/80 flex flex-wrap items-center justify-between gap-2">
+            <div className="p-3 lg:px-6 lg:py-3 border-b border-slate-800 bg-slate-900 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <button 
                   onClick={() => setCurrentView('dashboard')}
-                  className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition"
+                  className="flex items-center gap-1.5 text-xs text-white font-semibold bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 transition"
                 >
                   <ArrowLeft size={14} /> Back
                 </button>
@@ -1870,8 +1890,7 @@ export default function App() {
                     value={activeVideo?.brand || 'Thrive'}
                     disabled={!isAdmin}
                     onChange={(e) => handleUpdateBrand(activeVideoId, e.target.value, e)}
-                    style={{ colorScheme: 'dark' }}
-                    className={`text-[16px] md:text-[11px] bg-slate-800 border border-slate-700 text-indigo-300 rounded-lg px-2 py-1 focus:outline-none font-medium ${
+                    className={`text-[16px] md:text-[11px] bg-slate-800 border border-slate-700 text-indigo-200 rounded-lg px-2 py-1 focus:outline-none font-bold ${
                       isAdmin ? 'cursor-pointer hover:bg-slate-700' : 'cursor-not-allowed opacity-80'
                     }`}
                   >
@@ -1886,12 +1905,12 @@ export default function App() {
                     <button
                       key={status}
                       onClick={() => handleUpdateStatus(status)}
-                      className={`px-2 py-1 rounded font-medium transition ${
+                      className={`px-2 py-1 rounded font-bold transition ${
                         activeVideo?.status === status 
                           ? status === 'Approved' ? 'bg-emerald-600 text-white' 
                             : status === 'Changes Requested' ? 'bg-amber-600 text-white' 
                             : 'bg-indigo-600 text-white'
-                          : 'text-slate-300 hover:text-white'
+                          : 'text-slate-200 hover:text-white'
                       }`}
                     >
                       {status}
@@ -1901,7 +1920,7 @@ export default function App() {
 
                 <button 
                   onClick={(e) => handleCopyLink(activeVideoId, e)}
-                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-700 transition"
                 >
                   <Share2 size={12} /> Share
                 </button>
@@ -1909,7 +1928,7 @@ export default function App() {
                 <button 
                   onClick={handleDownloadVideo}
                   disabled={isDownloading}
-                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition disabled:opacity-50"
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-700 transition disabled:opacity-50"
                   title="Direct Video Download"
                 >
                   {isDownloading ? (
@@ -1927,7 +1946,7 @@ export default function App() {
                       setUploadedFileName('');
                       setIsReplaceOpen(true);
                     }}
-                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-700 transition"
                   >
                     <RotateCcw size={12} /> Replace
                   </button>
@@ -1936,7 +1955,7 @@ export default function App() {
                 {isAdmin && (
                   <button 
                     onClick={(e) => handleDeleteVideo(activeVideoId, e)}
-                    className="flex items-center gap-1 bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-800/80 text-xs font-medium py-1 px-2.5 rounded-lg transition"
+                    className="flex items-center gap-1 bg-red-950 hover:bg-red-900 text-red-200 border border-red-800 text-xs font-bold py-1 px-2.5 rounded-lg transition"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -1944,7 +1963,7 @@ export default function App() {
 
                 <button 
                   onClick={generateAiActionPlan}
-                  className="flex items-center gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-medium py-1 px-2.5 rounded-lg transition shadow"
+                  className="flex items-center gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold py-1 px-2.5 rounded-lg transition shadow"
                 >
                   <Sparkles size={12} /> AI
                 </button>
@@ -2001,7 +2020,7 @@ export default function App() {
                     <div className={`p-2 rounded-full shadow-2xl border flex items-center justify-center ${
                       highlightedCommentId === pinComment.id 
                         ? 'bg-indigo-600 text-white border-white ring-4 ring-indigo-500/50 animate-pulse' 
-                        : 'bg-slate-900/90 text-indigo-400 border-indigo-500'
+                        : 'bg-slate-900 text-indigo-300 border-indigo-500'
                     }`}>
                       <MapPin size={18} fill="currentColor" />
                     </div>
@@ -2016,21 +2035,21 @@ export default function App() {
                       top: `${activePin.yPercent}%`,
                       transform: 'translate(-10%, -50%)'
                     }}
-                    className="absolute z-40 max-w-sm bg-slate-900/95 border border-slate-700 backdrop-blur-md rounded-2xl p-3 shadow-2xl space-y-2 text-xs"
+                    className="absolute z-40 max-w-sm bg-slate-900 border border-slate-700 rounded-2xl p-3 shadow-2xl space-y-2 text-xs"
                   >
                     <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
                       <div className="flex items-center gap-2">
                         <div className="p-1 bg-indigo-600 rounded-md text-white">
                           <MapPin size={14} />
                         </div>
-                        <span className="font-mono bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded-full font-semibold text-[10px]">
+                        <span className="font-mono bg-indigo-950 text-indigo-200 border border-indigo-800 px-2 py-0.5 rounded-full font-bold text-[10px]">
                           {activePin.timeFormatted}
                         </span>
-                        <span className="text-slate-300 text-[11px] truncate max-w-[100px]">{authorName}</span>
+                        <span className="text-white font-bold text-[11px] truncate max-w-[100px]">{authorName}</span>
                       </div>
                       <button 
                         onClick={() => setActivePin(null)} 
-                        className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition"
+                        className="text-slate-300 hover:text-white p-0.5 rounded hover:bg-slate-800 transition"
                       >
                         <X size={14} />
                       </button>
@@ -2043,20 +2062,19 @@ export default function App() {
                         placeholder="Add a note..." 
                         value={inlinePinText}
                         onChange={(e) => setInlinePinText(e.target.value)}
-                        style={{ colorScheme: 'dark' }}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-[16px] md:text-xs text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-[16px] md:text-xs text-white placeholder-slate-300 focus:outline-none focus:border-indigo-500 font-medium"
                       />
                       <div className="flex justify-end gap-2 pt-1">
                         <button 
                           type="button" 
                           onClick={() => setActivePin(null)}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-medium transition"
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-bold transition"
                         >
                           Cancel
                         </button>
                         <button 
                           type="submit" 
-                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-[11px] shadow transition"
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-[11px] shadow transition"
                         >
                           Post
                         </button>
@@ -2067,12 +2085,12 @@ export default function App() {
 
                 <div 
                   onClick={(e) => e.stopPropagation()} 
-                  className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 p-1.5 rounded-lg shadow-lg z-20"
+                  className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900 border border-slate-700 p-1.5 rounded-lg shadow-lg z-20"
                 >
                   <button
                     onClick={() => setIsDrawingMode(!isDrawingMode)}
                     className={`p-1.5 rounded transition ${
-                      isDrawingMode ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'
+                      isDrawingMode ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:text-white'
                     }`}
                     title="Toggle Drawing Tool"
                   >
@@ -2085,7 +2103,7 @@ export default function App() {
 
                       <button
                         onClick={handleUndoDrawing}
-                        className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded transition"
+                        className="p-1.5 text-slate-200 hover:text-white hover:bg-slate-800 rounded transition"
                         title="Undo last drawing stroke"
                       >
                         <Undo size={15} />
@@ -2098,7 +2116,7 @@ export default function App() {
                           key={w}
                           onClick={() => setStrokeWidth(w)}
                           className={`px-1.5 py-0.5 text-[10px] font-mono rounded font-bold transition ${
-                            strokeWidth === w ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white bg-slate-800'
+                            strokeWidth === w ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:text-white bg-slate-800'
                           }`}
                           title={`Line width ${w}px`}
                         >
@@ -2176,14 +2194,14 @@ export default function App() {
                       {isPlaying ? <Pause size={15} /> : <Play size={15} />}
                     </button>
 
-                    <div className="font-mono text-slate-200 text-[11px]">
+                    <div className="font-mono text-white text-[11px] font-bold">
                       <span>{formatTime(currentTime)}</span> / <span>{formatTime(duration)}</span>
                     </div>
                   </div>
 
                   <button 
                     onClick={() => setIsMuted(!isMuted)}
-                    className="text-slate-300 hover:text-white"
+                    className="text-slate-200 hover:text-white"
                   >
                     {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                   </button>
@@ -2200,12 +2218,11 @@ export default function App() {
                 </h2>
 
                 <div className="flex items-center gap-1">
-                  <ArrowUpDown size={12} className="text-slate-400" />
+                  <ArrowUpDown size={12} className="text-slate-300" />
                   <select
                     value={commentSort}
                     onChange={(e) => setCommentSort(e.target.value)}
-                    style={{ colorScheme: 'dark' }}
-                    className="bg-slate-950 border border-slate-800 text-indigo-300 text-[16px] md:text-[10px] font-medium rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    className="bg-slate-950 border border-slate-800 text-indigo-300 text-[16px] md:text-[10px] font-bold rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
                   >
                     <option value="timestamp">Timecode</option>
                     <option value="newest">Newest First</option>
@@ -2214,11 +2231,11 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px] font-medium">
+              <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px] font-bold">
                 <button
                   onClick={() => setCommentFilter('unresolved')}
                   className={`flex-1 py-1 rounded transition text-center ${
-                    commentFilter === 'unresolved' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'
+                    commentFilter === 'unresolved' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:text-white'
                   }`}
                 >
                   Active
@@ -2226,7 +2243,7 @@ export default function App() {
                 <button
                   onClick={() => setCommentFilter('resolved')}
                   className={`flex-1 py-1 rounded transition text-center ${
-                    commentFilter === 'resolved' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'
+                    commentFilter === 'resolved' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:text-white'
                   }`}
                 >
                   Resolved ({allVideoComments.filter(c => c.completed).length})
@@ -2234,7 +2251,7 @@ export default function App() {
                 <button
                   onClick={() => setCommentFilter('all')}
                   className={`flex-1 py-1 rounded transition text-center ${
-                    commentFilter === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'
+                    commentFilter === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:text-white'
                   }`}
                 >
                   All ({allVideoComments.length})
@@ -2248,8 +2265,7 @@ export default function App() {
                 placeholder="Your Name"
                 value={authorName}
                 onChange={(e) => handleAuthorNameChange(e.target.value)}
-                style={{ colorScheme: 'dark' }}
-                className="w-full bg-slate-800 border border-slate-700 text-[16px] md:text-xs rounded-lg p-2 text-slate-100 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-800 border border-slate-700 text-[16px] md:text-xs rounded-lg p-2 text-white font-medium focus:outline-none focus:border-indigo-500"
               />
               <div className="flex gap-2">
                 <input 
@@ -2257,8 +2273,7 @@ export default function App() {
                   placeholder="Add feedback at frame..."
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
-                  style={{ colorScheme: 'dark' }}
-                  className="flex-1 bg-slate-800 border border-slate-700 text-[16px] md:text-xs rounded-lg p-2 text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="flex-1 bg-slate-800 border border-slate-700 text-[16px] md:text-xs rounded-lg p-2 text-white font-medium focus:outline-none focus:border-indigo-500"
                 />
                 <button 
                   type="submit"
@@ -2271,7 +2286,7 @@ export default function App() {
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[350px] lg:max-h-none">
               {sortedComments.length === 0 ? (
-                <div className="text-center py-8 text-slate-400 text-xs">
+                <div className="text-center py-8 text-slate-300 text-xs font-semibold">
                   {commentFilter === 'resolved' 
                     ? 'No resolved comments yet.' 
                     : 'No active comments. Add feedback above, click video screen, or draw!'}
@@ -2288,41 +2303,41 @@ export default function App() {
                         isHighlighted
                           ? 'bg-indigo-900 border-indigo-400 ring-2 ring-indigo-500 shadow-lg scale-[1.02]'
                           : c.completed 
-                          ? 'bg-slate-900/60 border-slate-800 opacity-60' 
+                          ? 'bg-slate-900/80 border-slate-800 opacity-60' 
                           : 'bg-slate-800 border-slate-700 hover:border-slate-600'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-xs text-indigo-300">{c.author}</span>
+                        <span className="font-bold text-xs text-indigo-300">{c.author}</span>
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
                             jumpToTime(c.timestamp);
                           }}
-                          className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-200 hover:bg-indigo-600 hover:text-white transition"
+                          className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-white font-bold hover:bg-indigo-600 transition"
                         >
                           {c.timeFormatted}
                         </button>
                       </div>
-                      <p className="text-xs text-slate-100">{c.text}</p>
+                      <p className="text-xs text-white font-medium">{c.text}</p>
                       
                       {c.hasDrawing && (
-                        <div className="mt-2 flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/60 border border-amber-800/80 px-2 py-0.5 rounded-md w-fit font-medium">
+                        <div className="mt-2 flex items-center gap-1 text-[10px] text-amber-300 bg-amber-950 border border-amber-800 px-2 py-0.5 rounded-md w-fit font-bold">
                           <Pencil size={11} /> Drawing Markup Attached
                         </div>
                       )}
 
                       {c.pinLocation && (
-                        <div className="mt-2 flex items-center gap-1 text-[10px] text-indigo-300 bg-indigo-950/60 border border-indigo-800/80 px-2 py-0.5 rounded-md w-fit font-medium">
+                        <div className="mt-2 flex items-center gap-1 text-[10px] text-indigo-200 bg-indigo-950 border border-indigo-800 px-2 py-0.5 rounded-md w-fit font-bold">
                           <MapPin size={11} /> Spatial Pinpoint Attached
                         </div>
                       )}
 
-                      <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-700/60">
+                      <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-700">
                         <button 
                           onClick={(e) => toggleCommentComplete(c.id, e)}
-                          className={`flex items-center gap-1 text-[10px] font-medium transition ${
-                            c.completed ? 'text-emerald-400' : 'text-slate-300 hover:text-white'
+                          className={`flex items-center gap-1 text-[10px] font-bold transition ${
+                            c.completed ? 'text-emerald-400' : 'text-slate-200 hover:text-white'
                           }`}
                         >
                           <Check size={11} /> {c.completed ? 'Resolved' : 'Mark Resolved'}
@@ -2330,7 +2345,7 @@ export default function App() {
 
                         <button 
                           onClick={(e) => handleDeleteComment(c.id, e)}
-                          className="flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-red-400 transition"
+                          className="flex items-center gap-1 text-[10px] font-bold text-slate-300 hover:text-red-400 transition"
                           title="Delete Comment"
                         >
                           <Trash2 size={11} /> Delete
@@ -2346,20 +2361,20 @@ export default function App() {
         </div>
       )}
 
-      {/* 🔐 AUTHENTICATION MODAL (SOLID NON-BLEED BACKGROUND) */}
+      {/* 🔐 AUTHENTICATION MODAL */}
       {isLoginModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
                 <ShieldCheck size={16} className="text-indigo-400" /> Admin Authentication
               </h3>
-              <button onClick={() => setIsLoginModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsLoginModalOpen(false)} className="text-slate-300 hover:text-white">
                 <X size={18} />
               </button>
             </div>
 
-            <p className="text-xs text-slate-200 leading-relaxed">
+            <p className="text-xs text-slate-100 font-medium leading-relaxed">
               Sign in with an authorized account to upload videos, delete assets, or create/rename project folders.
             </p>
 
@@ -2369,15 +2384,13 @@ export default function App() {
               </div>
             )}
 
-            {/* SOLID FORM CONTAINER */}
             <form onSubmit={handleManualEmailLogin} className="space-y-3 text-left bg-slate-950 p-4 border border-slate-800 rounded-xl">
               <div>
-                <label className="text-[10px] text-slate-300 font-bold uppercase block mb-1.5">Authorized Email Address</label>
+                <label className="text-[10px] text-white font-bold uppercase block mb-1.5">Authorized Email Address</label>
                 <select
                   value={manualEmailInput}
                   onChange={(e) => setManualEmailInput(e.target.value)}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  className="w-full bg-slate-800 border border-slate-700 text-white font-bold text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
                 >
                   <option value="">-- Select Admin Account --</option>
                   {ALLOWED_ADMIN_EMAILS.map((e) => (
@@ -2387,7 +2400,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-300 font-bold uppercase block mb-1.5 flex items-center gap-1">
+                <label className="text-[10px] text-white font-bold uppercase block mb-1.5 flex items-center gap-1">
                   <KeyRound size={11} className="text-indigo-400" /> Admin Password
                 </label>
                 <input 
@@ -2395,8 +2408,7 @@ export default function App() {
                   placeholder="Enter Password (Thrive1234)"
                   value={manualPasswordInput}
                   onChange={(e) => setManualPasswordInput(e.target.value)}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-400 text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-300 font-bold text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -2410,7 +2422,7 @@ export default function App() {
 
             <button 
               onClick={() => setIsLoginModalOpen(false)}
-              className="w-full py-1.5 text-slate-300 hover:text-white text-[11px] font-medium transition"
+              className="w-full py-1.5 text-slate-200 hover:text-white text-[11px] font-bold transition"
             >
               Continue as Guest Reviewer
             </button>
@@ -2420,20 +2432,20 @@ export default function App() {
 
       {/* 📂 ADD BRAND FOLDER MODAL */}
       {isAddFolderModalOpen && isAdmin && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
                 <FolderPlus size={16} className="text-indigo-400" /> Create Brand Folder
               </h3>
-              <button onClick={() => setIsAddFolderModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsAddFolderModalOpen(false)} className="text-slate-300 hover:text-white">
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleCreateFolder} className="space-y-4 text-xs">
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Folder / Brand Name</label>
+                <label className="block text-white font-bold mb-1.5">Folder / Brand Name</label>
                 <input 
                   type="text" 
                   autoFocus
@@ -2441,8 +2453,7 @@ export default function App() {
                   placeholder="e.g. Modern Market" 
                   value={newFolderNameInput}
                   onChange={(e) => setNewFolderNameInput(e.target.value)}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white placeholder-slate-400 text-xs focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white placeholder-slate-300 font-bold text-xs focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -2450,7 +2461,7 @@ export default function App() {
                 <button 
                   type="button" 
                   onClick={() => setIsAddFolderModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg"
+                  className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg"
                 >
                   Cancel
                 </button>
@@ -2468,28 +2479,27 @@ export default function App() {
 
       {/* ✏️ RENAME BRAND FOLDER MODAL */}
       {isRenameFolderModalOpen && isAdmin && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
                 <Edit3 size={16} className="text-indigo-400" /> Rename Folder
               </h3>
-              <button onClick={() => setIsRenameFolderModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsRenameFolderModalOpen(false)} className="text-slate-300 hover:text-white">
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleRenameFolderSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Rename "{renameFolderTarget}" To:</label>
+                <label className="block text-white font-bold mb-1.5">Rename "{renameFolderTarget}" To:</label>
                 <input 
                   type="text" 
                   autoFocus
                   required
                   value={renameFolderInput}
                   onChange={(e) => setRenameFolderInput(e.target.value)}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white text-xs focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white font-bold text-xs focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -2497,7 +2507,7 @@ export default function App() {
                 <button 
                   type="button" 
                   onClick={() => setIsRenameFolderModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg"
+                  className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg"
                 >
                   Cancel
                 </button>
@@ -2515,34 +2525,33 @@ export default function App() {
 
       {/* UPLOAD MODAL */}
       {isUploadOpen && isAdmin && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm">Upload New Video Asset</h3>
-              <button onClick={() => setIsUploadOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsUploadOpen(false)} className="text-slate-300 hover:text-white">
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleUploadSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Select File (Auto-Uploads to Bunny CDN)</label>
+                <label className="block text-white font-bold mb-1.5">Select File (Auto-Uploads to Bunny CDN)</label>
                 <input 
                   type="file" 
                   accept="video/*"
                   onChange={handleFileSelect}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 text-[16px] md:text-xs"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white font-medium text-[16px] md:text-xs"
                   disabled={isUploadingToCdn}
                 />
 
                 {isUploadingToCdn && (
                   <div className="space-y-1.5 mt-2.5">
-                    <div className="flex items-center justify-between text-xs text-indigo-400">
-                      <span className="flex items-center gap-1.5 font-medium">
-                        <Loader2 size={13} className="animate-spin" /> Uploading to Bunny CDN...
+                    <div className="flex items-center justify-between text-xs text-indigo-300 font-bold">
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 size={13} className="animate-spin text-indigo-400" /> Uploading to Bunny CDN...
                       </span>
-                      <span className="font-mono font-bold text-white">{uploadProgress}%</span>
+                      <span className="font-mono text-white">{uploadProgress}%</span>
                     </div>
                     <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
                       <div 
@@ -2556,41 +2565,38 @@ export default function App() {
 
               <div className="relative flex py-1 items-center">
                 <div className="flex-grow border-t border-slate-800"></div>
-                <span className="flex-shrink mx-2 text-slate-400 text-[10px] uppercase font-bold">Or Paste Direct Web URL</span>
+                <span className="flex-shrink mx-2 text-slate-300 text-[10px] uppercase font-bold">Or Paste Direct Web URL</span>
                 <div className="flex-grow border-t border-slate-800"></div>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Direct Video URL (.mp4 / CDN Link)</label>
+                <label className="block text-white font-bold mb-1.5">Direct Video URL (.mp4 / CDN Link)</label>
                 <input 
                   type="text" 
                   value={newVideoUrl}
                   onChange={(e) => setNewVideoUrl(e.target.value)}
                   placeholder="https://your-cdn-host.com/video.mp4"
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white placeholder-slate-400 text-[16px] md:text-xs"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white placeholder-slate-300 font-medium text-[16px] md:text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Video Title</label>
+                <label className="block text-white font-bold mb-1.5">Video Title</label>
                 <input 
                   type="text" 
                   value={newVideoTitle}
                   onChange={(e) => setNewVideoTitle(e.target.value)}
                   placeholder="e.g. QDOBA_Summer_Campaign"
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white placeholder-slate-400 text-[16px] md:text-xs"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white placeholder-slate-300 font-medium text-[16px] md:text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Brand Folder</label>
+                <label className="block text-white font-bold mb-1.5">Brand Folder</label>
                 <select 
                   value={newVideoBrand}
                   onChange={(e) => setNewVideoBrand(e.target.value)}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-[16px] md:text-xs"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white font-bold text-[16px] md:text-xs"
                 >
                   {brands.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
@@ -2600,7 +2606,7 @@ export default function App() {
                 <button 
                   type="button" 
                   onClick={() => setIsUploadOpen(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg"
+                  className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg"
                 >
                   Cancel
                 </button>
@@ -2619,34 +2625,33 @@ export default function App() {
 
       {/* REPLACE VIDEO MODAL */}
       {isReplaceOpen && isAdmin && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm">Replace Video Asset</h3>
-              <button onClick={() => setIsReplaceOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsReplaceOpen(false)} className="text-slate-300 hover:text-white">
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleReplaceSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Upload New Cut File (Auto-Uploads to CDN)</label>
+                <label className="block text-white font-bold mb-1.5">Upload New Cut File (Auto-Uploads to CDN)</label>
                 <input 
                   type="file" 
                   accept="video/*"
                   onChange={handleFileSelect}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 text-[16px] md:text-xs"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white font-medium text-[16px] md:text-xs"
                   disabled={isUploadingToCdn}
                 />
 
                 {isUploadingToCdn && (
                   <div className="space-y-1.5 mt-2.5">
-                    <div className="flex items-center justify-between text-xs text-indigo-400">
-                      <span className="flex items-center gap-1.5 font-medium">
-                        <Loader2 size={13} className="animate-spin" /> Uploading new cut...
+                    <div className="flex items-center justify-between text-xs text-indigo-300 font-bold">
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 size={13} className="animate-spin text-indigo-400" /> Uploading new cut...
                       </span>
-                      <span className="font-mono font-bold text-white">{uploadProgress}%</span>
+                      <span className="font-mono text-white">{uploadProgress}%</span>
                     </div>
                     <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
                       <div 
@@ -2660,31 +2665,29 @@ export default function App() {
 
               <div className="relative flex py-1 items-center">
                 <div className="flex-grow border-t border-slate-800"></div>
-                <span className="flex-shrink mx-2 text-slate-400 text-[10px] uppercase font-bold">Or Paste Direct Web URL</span>
+                <span className="flex-shrink mx-2 text-slate-300 text-[10px] uppercase font-bold">Or Paste Direct Web URL</span>
                 <div className="flex-grow border-t border-slate-800"></div>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Direct Video URL (.mp4 / CDN Link)</label>
+                <label className="block text-white font-bold mb-1.5">Direct Video URL (.mp4 / CDN Link)</label>
                 <input 
                   type="text" 
                   value={newVideoUrl}
                   onChange={(e) => setNewVideoUrl(e.target.value)}
                   placeholder="https://your-cdn-host.com/video_v2.mp4"
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white placeholder-slate-400 text-[16px] md:text-xs"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white placeholder-slate-300 font-medium text-[16px] md:text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5">Updated Title</label>
+                <label className="block text-white font-bold mb-1.5">Updated Title</label>
                 <input 
                   type="text" 
                   value={newVideoTitle}
                   onChange={(e) => setNewVideoTitle(e.target.value)}
                   placeholder="Asset Title"
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white placeholder-slate-400 text-[16px] md:text-xs"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white placeholder-slate-300 font-medium text-[16px] md:text-xs"
                 />
               </div>
 
@@ -2692,7 +2695,7 @@ export default function App() {
                 <button 
                   type="button" 
                   onClick={() => setIsReplaceOpen(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg"
+                  className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg"
                 >
                   Cancel
                 </button>
@@ -2711,21 +2714,21 @@ export default function App() {
 
       {/* AI ACTION PLAN MODAL */}
       {isAiModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white flex items-center gap-2 text-sm">
                 <Sparkles size={16} className="text-indigo-400" /> AI Executive Revision Plan
               </h3>
-              <button onClick={() => setIsAiModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsAiModalOpen(false)} className="text-slate-300 hover:text-white">
                 <X size={18} />
               </button>
             </div>
 
             {isAiLoading ? (
-              <div className="py-12 text-center text-slate-300 text-xs">Generating Action Plan...</div>
+              <div className="py-12 text-center text-white text-xs font-bold">Generating Action Plan...</div>
             ) : (
-              <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 text-xs font-mono text-slate-200 whitespace-pre-line max-h-80 overflow-y-auto">
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 text-xs font-mono text-slate-100 whitespace-pre-line max-h-80 overflow-y-auto">
                 {aiOutput}
               </div>
             )}
