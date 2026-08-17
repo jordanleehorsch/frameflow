@@ -30,9 +30,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v4.1",
-  title: "Always-On Premiere Render Button",
-  description: "Permanently pinned the Render Premiere Timeline button to the sidebar and added CEP cache-busting."
+  version: "v4.2",
+  title: "2-Column Panel Grid & Instant CDN Video Stream Fix",
+  description: "Set recent cards to 2-across half-width grid in narrow CEP panels and bound dynamic video keying for instant playback after Premiere exports."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -200,22 +200,36 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
+  // 🎬 LISTEN FOR DIRECT PREMIERE TIMELINE EXPORTS & AUTO-CREATE ASSET
   useEffect(() => {
     const handlePremiereMessage = async (event) => {
       if (event.data && event.data.type === 'PREMIERE_SEQUENCE_EXPORTED') {
         const { fileUrl, fileName, sequenceName } = event.data;
         if (fileUrl) {
-          setIsUploadOpen(true);
-          setNewVideoTitle(sequenceName || fileName || 'Premiere Timeline Cut');
-          setNewVideoUrl(fileUrl);
-          setUploadedFileName(fileName);
+          const deterministicId = getDeterministicId(fileName || fileUrl);
+          const cleanTitle = sequenceName || fileName || 'Premiere Timeline Cut';
+
+          const newVidObj = {
+            id: deterministicId,
+            title: cleanTitle,
+            brand: selectedBrand !== 'All' ? selectedBrand : 'Thrive',
+            url: fileUrl,
+            status: 'In Review',
+            createdAt: new Date().toISOString(),
+            duration: 30
+          };
+
+          lastUserActionRef.current = Date.now();
+          setVideos(prev => [newVidObj, ...prev.filter(v => v.id !== deterministicId)]);
+          setActiveVideoId(deterministicId);
+          setCurrentView('review');
         }
       }
     };
 
     window.addEventListener('message', handlePremiereMessage);
     return () => window.removeEventListener('message', handlePremiereMessage);
-  }, []);
+  }, [selectedBrand]);
 
   const handleRenderPremiereTimeline = () => {
     if (window.parent) {
@@ -826,7 +840,7 @@ export default function App() {
     } catch (err) {
       console.error("Direct download failed, falling back to new window:", err);
       window.open(activeVideo.url, '_blank');
-    } finally {
+    } fontally {
       setIsDownloading(false);
     }
   };
@@ -1742,20 +1756,20 @@ export default function App() {
             </button>
           </div>
 
-          <div className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
+          <div className="p-3 md:p-8 max-w-7xl mx-auto w-full space-y-4">
             
             {showUpdateBanner && (
-              <div className="bg-indigo-950 border border-indigo-500/60 rounded-xl p-4 flex items-start justify-between gap-3 text-xs shadow-lg relative overflow-hidden">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-indigo-600 rounded-lg text-white flex-shrink-0 mt-0.5 shadow-md">
-                    <Sparkles size={16} />
+              <div className="bg-indigo-950 border border-indigo-500/60 rounded-xl p-3 flex items-start justify-between gap-3 text-xs shadow-lg relative overflow-hidden">
+                <div className="flex items-start gap-2.5">
+                  <div className="p-1.5 bg-indigo-600 rounded-lg text-white flex-shrink-0 mt-0.5 shadow-md">
+                    <Sparkles size={14} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-white text-sm">{LATEST_APP_UPDATE.title}</span>
-                      <span className="bg-indigo-600 text-white text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">{LATEST_APP_UPDATE.version}</span>
+                      <span className="font-bold text-white text-xs">{LATEST_APP_UPDATE.title}</span>
+                      <span className="bg-indigo-600 text-white text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold">{LATEST_APP_UPDATE.version}</span>
                     </div>
-                    <p className="text-slate-200 mt-1 leading-relaxed font-medium">
+                    <p className="text-slate-200 mt-0.5 text-[11px] leading-relaxed font-medium">
                       {LATEST_APP_UPDATE.description}
                     </p>
                   </div>
@@ -1765,45 +1779,52 @@ export default function App() {
                   className="text-slate-300 hover:text-white p-1 rounded-lg hover:bg-indigo-900 transition flex-shrink-0"
                   title="Dismiss Announcement"
                 >
-                  <X size={16} />
+                  <X size={14} />
                 </button>
               </div>
             )}
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-bold text-white tracking-wide">Recents</h2>
-                <span className="text-xs text-slate-300 font-bold">{filteredVideos.length} Assets</span>
+                <h2 className="text-xs font-bold text-white tracking-wide uppercase">Recents</h2>
+                <span className="text-[11px] text-slate-300 font-bold">{filteredVideos.length} Assets</span>
               </div>
 
               {filteredVideos.length === 0 ? (
-                <div className="p-12 border border-dashed border-slate-700 rounded-2xl text-center text-slate-300 text-xs font-semibold">
+                <div className="p-8 border border-dashed border-slate-700 rounded-2xl text-center text-slate-300 text-xs font-semibold">
                   No assets found in Bunny CDN. Click Upload to add your first video!
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                /* 🎬 ALWAYS 2 COLUMNS ON NARROW/SIDEBAR PANELS (grid-cols-2) */
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
                   {filteredVideos.map((vid) => (
                     <div 
                       key={vid.id}
                       onClick={() => openVideoReview(vid.id)}
-                      className="group bg-slate-900 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30 relative"
+                      className="group bg-slate-900 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30 relative flex flex-col"
                     >
                       <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
-                        <video src={vid.url} playsInline className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                        <video 
+                          key={vid.url}
+                          src={vid.url} 
+                          playsInline 
+                          preload="metadata"
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
+                        />
                         <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition" />
                         
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                          <div className="p-3 bg-indigo-600 rounded-full text-white shadow-lg">
-                            <Play size={20} fill="white" />
+                          <div className="p-2 bg-indigo-600 rounded-full text-white shadow-lg">
+                            <Play size={16} fill="white" />
                           </div>
                         </div>
 
-                        <div className="absolute bottom-2 right-2 bg-black/80 px-1.5 py-0.5 rounded text-[10px] font-mono text-white font-bold">
+                        <div className="absolute bottom-1.5 right-1.5 bg-black/80 px-1 py-0.5 rounded text-[9px] font-mono text-white font-bold">
                           {formatTime(vid.duration)}
                         </div>
 
-                        <div className="absolute top-2 left-2">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold shadow ${
+                        <div className="absolute top-1.5 left-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow ${
                             vid.status === 'Approved' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' :
                             vid.status === 'Changes Requested' ? 'bg-amber-950 text-amber-300 border border-amber-800' :
                             'bg-indigo-950 text-indigo-300 border border-indigo-800'
@@ -1813,7 +1834,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="p-3 flex items-start justify-between gap-2">
+                      <div className="p-2 flex items-start justify-between gap-1.5">
                         <div className="overflow-hidden flex-1">
                           {editingTitleId === vid.id && isAdmin ? (
                             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -1823,15 +1844,15 @@ export default function App() {
                                 onChange={(e) => setTempTitleText(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && saveRenameVideo(vid.id, e)}
                                 autoFocus
-                                className="w-full bg-slate-800 border border-indigo-500 rounded text-[16px] md:text-xs px-1.5 py-0.5 text-white font-bold focus:outline-none"
+                                className="w-full bg-slate-800 border border-indigo-500 rounded text-[11px] px-1 py-0.5 text-white font-bold focus:outline-none"
                               />
                               <button onClick={(e) => saveRenameVideo(vid.id, e)} className="text-emerald-400 p-0.5 hover:bg-slate-800 rounded">
-                                <Check size={14} />
+                                <Check size={12} />
                               </button>
                             </div>
                           ) : (
                             <div className="flex items-center gap-1 group/title">
-                              <div className="font-bold text-xs text-white truncate group-hover:text-indigo-300 transition">
+                              <div className="font-bold text-[11px] text-white truncate group-hover:text-indigo-300 transition">
                                 {vid.title}
                               </div>
                               {isAdmin && (
@@ -1840,36 +1861,35 @@ export default function App() {
                                   title="Rename Video"
                                   className="opacity-0 group-hover/title:opacity-100 text-slate-300 hover:text-white transition p-0.5"
                                 >
-                                  <Pencil size={11} />
+                                  <Pencil size={10} />
                                 </button>
                               )}
                             </div>
                           )}
 
-                          <div className="mt-1 flex items-center gap-1">
+                          <div className="mt-0.5 flex items-center gap-1 flex-wrap">
                             <select
                               value={vid.brand}
                               disabled={!isAdmin}
                               onClick={(e) => e.stopPropagation()}
                               onMouseDown={(e) => e.stopPropagation()}
                               onChange={(e) => handleUpdateBrand(vid.id, e.target.value, e)}
-                              className={`text-[16px] md:text-[10px] bg-slate-800 border border-slate-700 text-indigo-200 rounded px-1.5 py-0.5 focus:outline-none font-bold ${
+                              className={`text-[9px] bg-slate-800 border border-slate-700 text-indigo-200 rounded px-1 py-0.5 focus:outline-none font-bold ${
                                 isAdmin ? 'cursor-pointer hover:bg-slate-700' : 'cursor-not-allowed opacity-80'
                               }`}
                             >
                               {brands.map(b => <option key={b} value={b}>{b}</option>)}
                             </select>
-                            <span className="text-[10px] text-slate-300 font-semibold">• {new Date(vid.createdAt).toLocaleDateString()}</span>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
                           <button 
                             onClick={(e) => handleCopyLink(vid.id, e)}
                             title="Copy Link"
                             className="text-slate-300 hover:text-white p-1 rounded hover:bg-slate-800 transition"
                           >
-                            <Share2 size={13} />
+                            <Share2 size={12} />
                           </button>
                           
                           {isAdmin && (
@@ -1878,7 +1898,7 @@ export default function App() {
                               title="Delete Asset"
                               className="text-slate-300 hover:text-red-400 p-1 rounded hover:bg-slate-800 transition"
                             >
-                              <Trash2 size={13} />
+                              <Trash2 size={12} />
                             </button>
                           )}
                         </div>
@@ -2006,10 +2026,13 @@ export default function App() {
                 className="relative max-h-[60vh] lg:max-h-[70vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
                 onClick={handleCanvasClick}
               >
+                {/* 🎬 DYNAMIC KEY FORCED RELOAD FOR CDN VIDEO STREAM */}
                 <video
+                  key={activeVideo?.url}
                   ref={videoRef}
                   src={activeVideo?.url}
                   playsInline
+                  preload="auto"
                   className="max-h-[60vh] lg:max-h-[70vh] w-full object-contain"
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                   onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
