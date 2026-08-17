@@ -30,9 +30,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v4.2",
-  title: "2-Column Panel Grid & Instant CDN Video Stream Fix",
-  description: "Set recent cards to 2-across half-width grid in narrow CEP panels and bound dynamic video keying for instant playback after Premiere exports."
+  version: "v4.3",
+  title: "Environment-Aware Render Button & Compact 2-Col Grid",
+  description: "Restricted Premiere timeline button strictly to CEP panel instances and forced 2-across half-width card layout for narrow panels."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -74,6 +74,12 @@ export default function App() {
     new URLSearchParams(window.location.search).get('v') || 
     new URLSearchParams(window.location.search).get('video')
   );
+
+  // 🎬 DETECT PREMIERE PRO CEP ENVIRONMENT
+  const [isPremiereEnv] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('cep') === '1' || params.get('premiere') === 'true';
+  });
 
   const [currentView, setCurrentView] = useState(() => {
     return initialVideoParamRef.current ? 'review' : 'dashboard';
@@ -200,7 +206,7 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // 🎬 LISTEN FOR DIRECT PREMIERE TIMELINE EXPORTS & AUTO-CREATE ASSET
+  // Listen for exported sequences from CEP index.html bridge
   useEffect(() => {
     const handlePremiereMessage = async (event) => {
       if (event.data && event.data.type === 'PREMIERE_SEQUENCE_EXPORTED') {
@@ -234,8 +240,6 @@ export default function App() {
   const handleRenderPremiereTimeline = () => {
     if (window.parent) {
       window.parent.postMessage({ type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE' }, '*');
-    } else {
-      alert("Premiere timeline export is active inside the Premiere Pro extension panel.");
     }
   };
 
@@ -840,7 +844,7 @@ export default function App() {
     } catch (err) {
       console.error("Direct download failed, falling back to new window:", err);
       window.open(activeVideo.url, '_blank');
-    } fontally {
+    } finally {
       setIsDownloading(false);
     }
   };
@@ -1683,14 +1687,16 @@ export default function App() {
             </button>
           )}
 
-          {/* PERMANENT PREMIERE TIMELINE RENDER BUTTON */}
-          <button
-            onClick={handleRenderPremiereTimeline}
-            className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 px-4 rounded-lg text-xs transition shadow-lg shadow-purple-950"
-            title="Render active sequence directly from Premiere Pro timeline"
-          >
-            <Clapperboard size={16} /> Render Premiere Timeline
-          </button>
+          {/* 🎬 PREMIERE TIMELINE RENDER BUTTON (ONLY SHOWN INSIDE PREMIERE CEP PANEL) */}
+          {isPremiereEnv && (
+            <button
+              onClick={handleRenderPremiereTimeline}
+              className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 px-4 rounded-lg text-xs transition shadow-lg shadow-purple-950"
+              title="Render active sequence directly from Premiere Pro timeline"
+            >
+              <Clapperboard size={16} /> Render Premiere Timeline
+            </button>
+          )}
 
           <button 
             onClick={() => {
@@ -1795,8 +1801,8 @@ export default function App() {
                   No assets found in Bunny CDN. Click Upload to add your first video!
                 </div>
               ) : (
-                /* 🎬 ALWAYS 2 COLUMNS ON NARROW/SIDEBAR PANELS (grid-cols-2) */
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                /* 🎬 FORCED 2-COLUMN GRID AT BASE PANEL WIDTHS (grid-cols-2) */
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                   {filteredVideos.map((vid) => (
                     <div 
                       key={vid.id}
@@ -2026,7 +2032,6 @@ export default function App() {
                 className="relative max-h-[60vh] lg:max-h-[70vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
                 onClick={handleCanvasClick}
               >
-                {/* 🎬 DYNAMIC KEY FORCED RELOAD FOR CDN VIDEO STREAM */}
                 <video
                   key={activeVideo?.url}
                   ref={videoRef}
