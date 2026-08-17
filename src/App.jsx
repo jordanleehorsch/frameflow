@@ -30,9 +30,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v4.3",
-  title: "Environment-Aware Render Button & Compact 2-Col Grid",
-  description: "Restricted Premiere timeline button strictly to CEP panel instances and forced 2-across half-width card layout for narrow panels."
+  version: "v4.4",
+  title: "Auto-Copy Share Link & CDN Video Processing Indicator",
+  description: "Added automatic clipboard link copying with instant feedback and a video stream processing overlay."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -75,7 +75,6 @@ export default function App() {
     new URLSearchParams(window.location.search).get('video')
   );
 
-  // 🎬 DETECT PREMIERE PRO CEP ENVIRONMENT
   const [isPremiereEnv] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('cep') === '1' || params.get('premiere') === 'true';
@@ -95,6 +94,8 @@ export default function App() {
   const sessionCommentsRef = useRef({});
 
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
+  const [copiedStatus, setCopiedStatus] = useState(false);
+  const [isVideoProcessing, setIsVideoProcessing] = useState(true);
 
   const [user, setUser] = useState(() => {
     try {
@@ -206,7 +207,12 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // Listen for exported sequences from CEP index.html bridge
+  useEffect(() => {
+    setIsVideoProcessing(true);
+    setCurrentTime(0);
+    setDuration(0);
+  }, [activeVideoId, activeVideo?.url]);
+
   useEffect(() => {
     const handlePremiereMessage = async (event) => {
       if (event.data && event.data.type === 'PREMIERE_SEQUENCE_EXPORTED') {
@@ -229,6 +235,8 @@ export default function App() {
           setVideos(prev => [newVidObj, ...prev.filter(v => v.id !== deterministicId)]);
           setActiveVideoId(deterministicId);
           setCurrentView('review');
+          
+          handleCopyLink(deterministicId);
         }
       }
     };
@@ -802,6 +810,7 @@ export default function App() {
     }
   }, [currentView, activeVideoId]);
 
+  // 📋 AUTO-COPY SHARE LINK WITH VISUAL FEEDBACK
   const handleCopyLink = (videoIdToCopy, e) => {
     if (e) e.stopPropagation();
     const targetId = videoIdToCopy || activeVideoId;
@@ -811,12 +820,13 @@ export default function App() {
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(shareUrl).then(() => {
-        alert(`✅ Direct Video Link Copied!\n\n${shareUrl}`);
+        setCopiedStatus(true);
+        setTimeout(() => setCopiedStatus(false), 2500);
       }).catch(() => {
-        prompt('Copy this direct video link for Hive:', shareUrl);
+        prompt('Copy this direct video link:', shareUrl);
       });
     } else {
-      prompt('Copy this direct video link for Hive:', shareUrl);
+      prompt('Copy this direct video link:', shareUrl);
     }
   };
 
@@ -1979,7 +1989,15 @@ export default function App() {
                   onClick={(e) => handleCopyLink(activeVideoId, e)}
                   className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-700 transition"
                 >
-                  <Share2 size={12} /> Share
+                  {copiedStatus ? (
+                    <>
+                      <Check size={12} className="text-emerald-400" /> <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Share2 size={12} /> Share
+                    </>
+                  )}
                 </button>
 
                 <button 
@@ -2028,19 +2046,41 @@ export default function App() {
             </div>
 
             <div className="flex-1 flex flex-col justify-center items-center p-3 md:p-6 bg-slate-950 relative overflow-hidden min-h-[50vh]">
+              {/* 🎬 FIXED ASPECT RATIO CONTAINER PREVENTS COLLAPSED BLACK BAR */}
               <div 
-                className="relative max-h-[60vh] lg:max-h-[70vh] w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
+                className="relative aspect-video w-full max-w-5xl min-h-[280px] bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
                 onClick={handleCanvasClick}
               >
+                {/* ⏳ VIDEO STREAM PROCESSING & LOADING OVERLAY */}
+                {isVideoProcessing && (
+                  <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center p-6 space-y-3">
+                    <Loader2 size={36} className="animate-spin text-indigo-500" />
+                    <div className="font-bold text-white text-sm">Processing & Syncing Video Stream...</div>
+                    <div className="text-slate-400 text-xs max-w-xs leading-relaxed">
+                      Bunny CDN is encoding your timeline cut for streaming. This usually takes just a few seconds.
+                    </div>
+                  </div>
+                )}
+
                 <video
                   key={activeVideo?.url}
                   ref={videoRef}
                   src={activeVideo?.url}
                   playsInline
                   preload="auto"
-                  className="max-h-[60vh] lg:max-h-[70vh] w-full object-contain"
+                  className="w-full h-full object-contain"
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
-                  onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
+                  onLoadedMetadata={() => {
+                    setDuration(videoRef.current?.duration || 0);
+                    setIsVideoProcessing(false);
+                  }}
+                  onCanPlay={() => setIsVideoProcessing(false)}
+                  onError={() => {
+                    // Auto-retry stream connection if CDN is still propagating
+                    setTimeout(() => {
+                      if (videoRef.current) videoRef.current.load();
+                    }, 3000);
+                  }}
                   onPlay={() => {
                     setIsPlaying(true);
                     setActivePin(null);
