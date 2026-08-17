@@ -30,9 +30,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v4.4",
-  title: "Auto-Copy Share Link & CDN Video Processing Indicator",
-  description: "Added automatic clipboard link copying with instant feedback and a video stream processing overlay."
+  version: "v4.5",
+  title: "Stream Timeout Safety & Enhanced Navigation",
+  description: "Fixed infinite processing spinner freeze, enlarged timeline render button, and added explicit Delete Video button."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -207,10 +207,17 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
+  // 🔓 SAFETY FALLBACK TIMER: Auto-unlock video loading overlay after 3.5 seconds
   useEffect(() => {
     setIsVideoProcessing(true);
     setCurrentTime(0);
     setDuration(0);
+
+    const safetyTimer = setTimeout(() => {
+      setIsVideoProcessing(false);
+    }, 3500);
+
+    return () => clearTimeout(safetyTimer);
   }, [activeVideoId, activeVideo?.url]);
 
   useEffect(() => {
@@ -810,7 +817,6 @@ export default function App() {
     }
   }, [currentView, activeVideoId]);
 
-  // 📋 AUTO-COPY SHARE LINK WITH VISUAL FEEDBACK
   const handleCopyLink = (videoIdToCopy, e) => {
     if (e) e.stopPropagation();
     const targetId = videoIdToCopy || activeVideoId;
@@ -1697,14 +1703,14 @@ export default function App() {
             </button>
           )}
 
-          {/* 🎬 PREMIERE TIMELINE RENDER BUTTON (ONLY SHOWN INSIDE PREMIERE CEP PANEL) */}
+          {/* 🎬 LARGER PREMIERE TIMELINE RENDER BUTTON */}
           {isPremiereEnv && (
             <button
               onClick={handleRenderPremiereTimeline}
-              className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 px-4 rounded-lg text-xs transition shadow-lg shadow-purple-950"
+              className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wide transition shadow-xl shadow-purple-950/80 border border-purple-400/40"
               title="Render active sequence directly from Premiere Pro timeline"
             >
-              <Clapperboard size={16} /> Render Premiere Timeline
+              <Clapperboard size={18} /> Render Premiere Timeline
             </button>
           )}
 
@@ -1811,7 +1817,6 @@ export default function App() {
                   No assets found in Bunny CDN. Click Upload to add your first video!
                 </div>
               ) : (
-                /* 🎬 FORCED 2-COLUMN GRID AT BASE PANEL WIDTHS (grid-cols-2) */
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                   {filteredVideos.map((vid) => (
                     <div 
@@ -1934,18 +1939,25 @@ export default function App() {
           
           <div className="flex-1 flex flex-col min-w-0">
             <div className="p-3 lg:px-6 lg:py-3 border-b border-slate-800 bg-slate-900 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button 
                   onClick={() => setCurrentView('dashboard')}
-                  className="flex items-center gap-1.5 text-xs text-white font-semibold bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 transition"
+                  className="flex items-center gap-1.5 text-xs text-white font-bold bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded-lg transition shadow"
                 >
                   <ArrowLeft size={14} /> Back
                 </button>
+
+                <button 
+                  onClick={() => setCurrentView('dashboard')}
+                  className="flex items-center gap-1.5 text-xs text-slate-200 hover:text-white font-semibold bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 transition"
+                >
+                  <Home size={14} /> Home
+                </button>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 ml-1">
                   <h1 
                     onClick={(e) => startRenameVideo(activeVideoId, activeVideo.title, e)}
-                    className={`text-xs md:text-sm font-bold text-white transition truncate max-w-[180px] md:max-w-xs ${
+                    className={`text-xs md:text-sm font-bold text-white transition truncate max-w-[160px] md:max-w-xs ${
                       isAdmin ? 'hover:text-indigo-300 cursor-pointer' : ''
                     }`}
                     title={isAdmin ? "Click to rename" : "Asset Title"}
@@ -1987,7 +1999,7 @@ export default function App() {
 
                 <button 
                   onClick={(e) => handleCopyLink(activeVideoId, e)}
-                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg border border-slate-700 transition"
                 >
                   {copiedStatus ? (
                     <>
@@ -2003,7 +2015,7 @@ export default function App() {
                 <button 
                   onClick={handleDownloadVideo}
                   disabled={isDownloading}
-                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-700 transition disabled:opacity-50"
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg border border-slate-700 transition disabled:opacity-50"
                   title="Direct Video Download"
                 >
                   {isDownloading ? (
@@ -2021,24 +2033,26 @@ export default function App() {
                       setUploadedFileName('');
                       setIsReplaceOpen(true);
                     }}
-                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-700 transition"
+                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg border border-slate-700 transition"
                   >
                     <RotateCcw size={12} /> Replace
                   </button>
                 )}
 
+                {/* 🗑️ EXPLICIT DELETE VIDEO BUTTON */}
                 {isAdmin && (
                   <button 
                     onClick={(e) => handleDeleteVideo(activeVideoId, e)}
-                    className="flex items-center gap-1 bg-red-950 hover:bg-red-900 text-red-200 border border-red-800 text-xs font-bold py-1 px-2.5 rounded-lg transition"
+                    className="flex items-center gap-1 bg-red-900 hover:bg-red-800 text-red-100 border border-red-700 text-xs font-bold py-1.5 px-3 rounded-lg transition shadow"
+                    title="Delete Video Asset"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={13} /> Delete Video
                   </button>
                 )}
 
                 <button 
                   onClick={generateAiActionPlan}
-                  className="flex items-center gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold py-1 px-2.5 rounded-lg transition shadow"
+                  className="flex items-center gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold py-1.5 px-2.5 rounded-lg transition shadow"
                 >
                   <Sparkles size={12} /> AI
                 </button>
@@ -2046,18 +2060,17 @@ export default function App() {
             </div>
 
             <div className="flex-1 flex flex-col justify-center items-center p-3 md:p-6 bg-slate-950 relative overflow-hidden min-h-[50vh]">
-              {/* 🎬 FIXED ASPECT RATIO CONTAINER PREVENTS COLLAPSED BLACK BAR */}
               <div 
                 className="relative aspect-video w-full max-w-5xl min-h-[280px] bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
                 onClick={handleCanvasClick}
               >
-                {/* ⏳ VIDEO STREAM PROCESSING & LOADING OVERLAY */}
+                {/* ⏳ STREAM PROCESSING INDICATOR OVERLAY */}
                 {isVideoProcessing && (
                   <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center p-6 space-y-3">
                     <Loader2 size={36} className="animate-spin text-indigo-500" />
                     <div className="font-bold text-white text-sm">Processing & Syncing Video Stream...</div>
                     <div className="text-slate-400 text-xs max-w-xs leading-relaxed">
-                      Bunny CDN is encoding your timeline cut for streaming. This usually takes just a few seconds.
+                      Syncing stream metadata with CDN...
                     </div>
                   </div>
                 )}
@@ -2076,10 +2089,9 @@ export default function App() {
                   }}
                   onCanPlay={() => setIsVideoProcessing(false)}
                   onError={() => {
-                    // Auto-retry stream connection if CDN is still propagating
                     setTimeout(() => {
                       if (videoRef.current) videoRef.current.load();
-                    }, 3000);
+                    }, 2000);
                   }}
                   onPlay={() => {
                     setIsPlaying(true);
