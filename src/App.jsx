@@ -30,9 +30,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v4.0",
-  title: "Premiere Timeline Export & Login Security",
-  description: "Typed email authentication, hidden password placeholders, and direct sequence rendering from Premiere Pro timelines."
+  version: "v4.1",
+  title: "Always-On Premiere Render Button",
+  description: "Permanently pinned the Render Premiere Timeline button to the sidebar and added CEP cache-busting."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -200,7 +200,6 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // 🎬 LISTEN FOR DIRECT PREMIERE TIMELINE EXPORTS (CEP Window Bridge)
   useEffect(() => {
     const handlePremiereMessage = async (event) => {
       if (event.data && event.data.type === 'PREMIERE_SEQUENCE_EXPORTED') {
@@ -218,16 +217,14 @@ export default function App() {
     return () => window.removeEventListener('message', handlePremiereMessage);
   }, []);
 
-  // Trigger Premiere Pro sequence render via parent CEP bridge
   const handleRenderPremiereTimeline = () => {
     if (window.parent) {
       window.parent.postMessage({ type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE' }, '*');
     } else {
-      alert("Premiere timeline export is available inside the Premiere Pro extension panel.");
+      alert("Premiere timeline export is active inside the Premiere Pro extension panel.");
     }
   };
 
-  // 📧 SEND CONSOLIDATED REVISION EMAIL
   const sendConsolidatedRevisionEmail = (videoId) => {
     const pendingList = sessionCommentsRef.current[videoId] || [];
     if (pendingList.length === 0) return;
@@ -1634,7 +1631,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* SIDEBAR GOOGLE AUTHENTICATION & UPLOAD PANEL */}
+        {/* SIDEBAR BUTTONS */}
         <div className="p-3 border-t border-slate-800 space-y-2">
           {user ? (
             <div className="bg-slate-800 border border-slate-700 rounded-xl p-2.5 space-y-2">
@@ -1672,15 +1669,14 @@ export default function App() {
             </button>
           )}
 
-          {isAdmin && (
-            <button
-              onClick={handleRenderPremiereTimeline}
-              className="w-full flex items-center justify-center gap-2 bg-purple-900 hover:bg-purple-800 text-purple-200 font-bold py-2 px-3 rounded-lg border border-purple-700 text-xs transition"
-              title="Render active sequence from Premiere Pro timeline"
-            >
-              <Clapperboard size={14} /> Render Premiere Timeline
-            </button>
-          )}
+          {/* PERMANENT PREMIERE TIMELINE RENDER BUTTON */}
+          <button
+            onClick={handleRenderPremiereTimeline}
+            className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 px-4 rounded-lg text-xs transition shadow-lg shadow-purple-950"
+            title="Render active sequence directly from Premiere Pro timeline"
+          >
+            <Clapperboard size={16} /> Render Premiere Timeline
+          </button>
 
           <button 
             onClick={() => {
@@ -2419,7 +2415,6 @@ export default function App() {
               </div>
             )}
 
-            {/* TYPED EMAIL & PASSWORD FORM */}
             <form onSubmit={handleManualEmailLogin} className="space-y-3 text-left bg-slate-950 p-4 border border-slate-800 rounded-xl">
               <div>
                 <label className="text-[10px] text-white font-bold uppercase block mb-1.5">Authorized Email Address</label>
@@ -2428,7 +2423,7 @@ export default function App() {
                   placeholder="e.g. jhorsch@thriverg.com"
                   value={manualEmailInput}
                   onChange={(e) => setManualEmailInput(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-400 font-medium text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-300 font-medium text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -2441,7 +2436,7 @@ export default function App() {
                   placeholder="Enter Password"
                   value={manualPasswordInput}
                   onChange={(e) => setManualPasswordInput(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-400 font-bold text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-300 font-bold text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
