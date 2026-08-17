@@ -25,17 +25,15 @@ const ALLOWED_ADMIN_EMAILS = [
 ];
 
 const ADMIN_PASSWORD = "Thrive1234";
-
-// Replace this string with your Google Cloud OAuth Client ID when ready
 const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 // Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v3.6",
-  title: "Consolidated Revision Email Notifications & Build Fix",
-  description: "Fixed JSX map syntax typo in authentication modal and enabled 2-minute debounced email digests for requested video changes."
+  version: "v3.7",
+  title: "1-Minute Email Digest Timer & Delivery Fix",
+  description: "Updated revision digest timer to 1 minute and synced closure state to ensure emails trigger reliably on comment completion."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -126,6 +124,14 @@ export default function App() {
   const [videos, setVideos] = useState([]);
   const [activeVideoId, setActiveVideoId] = useState('');
 
+  // Synchronized state refs for async email triggers
+  const videosRef = useRef(videos);
+  const authorNameRef = useRef('Reviewer');
+
+  useEffect(() => {
+    videosRef.current = videos;
+  }, [videos]);
+
   const [editingTitleId, setEditingTitleId] = useState(null);
   const [tempTitleText, setTempTitleText] = useState('');
 
@@ -167,6 +173,10 @@ export default function App() {
     } catch(e) { return 'Reviewer'; }
   });
 
+  useEffect(() => {
+    authorNameRef.current = authorName;
+  }, [authorName]);
+
   const handleAuthorNameChange = (newName) => {
     setAuthorName(newName);
     try {
@@ -193,12 +203,12 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // 📧 SEND CONSOLIDATED REVISION EMAIL
+  // 📧 SEND CONSOLIDATED REVISION EMAIL (Reads fresh refs)
   const sendConsolidatedRevisionEmail = (videoId) => {
     const pendingList = sessionCommentsRef.current[videoId] || [];
     if (pendingList.length === 0) return;
 
-    const targetVid = videos.find(v => v.id === videoId) || activeVideo;
+    const targetVid = videosRef.current.find(v => v.id === videoId) || activeVideo;
     const shareUrl = `${window.location.origin}${window.location.pathname}?v=${encodeURIComponent(videoId)}`;
 
     fetch('/api/notify-revisions', {
@@ -207,16 +217,23 @@ export default function App() {
       body: JSON.stringify({
         videoTitle: targetVid?.title || 'Video Asset',
         videoUrl: shareUrl,
-        authorName: authorName,
+        authorName: authorNameRef.current || 'Reviewer',
         comments: pendingList
       })
-    }).catch(err => console.error("Failed to trigger revision email:", err));
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success) {
+        console.warn("Revision Email Note:", data.error || data.message);
+      }
+    })
+    .catch(err => console.error("Failed to trigger revision email:", err));
 
     delete sessionCommentsRef.current[videoId];
     delete emailDebounceTimersRef.current[videoId];
   };
 
-  // ⏱️ QUEUE COMMENT AND DEBOUNCE EMAIL TRIGGER (2 Minutes)
+  // ⏱️ QUEUE COMMENT AND DEBOUNCE EMAIL TRIGGER (1 Minute = 60,000 ms)
   const queueCommentForEmailDigest = (commentObj, vidId) => {
     const vId = vidId || activeVideoId;
     if (!vId) return;
@@ -230,9 +247,10 @@ export default function App() {
       clearTimeout(emailDebounceTimersRef.current[vId]);
     }
 
+    // Timer set to 1 minute (60,000 ms)
     emailDebounceTimersRef.current[vId] = setTimeout(() => {
       sendConsolidatedRevisionEmail(vId);
-    }, 120000);
+    }, 60000);
   };
 
   useEffect(() => {
@@ -244,7 +262,7 @@ export default function App() {
 
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
-  }, [videos, authorName]);
+  }, []);
 
   useEffect(() => {
     const handleGoogleResponse = (response) => {
@@ -1411,12 +1429,20 @@ export default function App() {
     setUploadProgress(0);
   };
 
-  const jumpToTime = (time) => {
+ const jumpToTime = (time) => {
     if (videoRef.current) {
       videoRef.current.currentTime = time;
       setCurrentTime(time);
       videoRef.current.pause();
       setIsPlaying(false);
+    }
+
+    // Broadcast timecode seek event to Premiere Pro extension parent window
+    if (window.parent) {
+      window.parent.postMessage({
+        type: 'SEEK_PREMIERE_TIMELINE',
+        seconds: time
+      }, '*');
     }
   };
 
@@ -2357,7 +2383,7 @@ export default function App() {
                   className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
                 >
                   <option value="">-- Select Admin Account --</option>
-                  {ALLOWED_ADMIN_EMAILS.map(e => (
+                  {ALLOWED_ADMIN_EMAILS.map((e) => (
                     <option key={e} value={e}>{e}</option>
                   ))}
                 </select>
