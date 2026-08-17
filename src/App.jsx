@@ -4,7 +4,7 @@ import {
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
   Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo, MapPin,
-  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound
+  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound, Clapperboard
 } from 'lucide-react';
 
 // ==========================================
@@ -29,11 +29,10 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
-// Latest App Update Information
 const LATEST_APP_UPDATE = {
-  version: "v3.9",
-  title: "CEP Force High-Contrast Color Overrides",
-  description: "Applied forced CSS brightness rules to prevent Premiere Pro CEP Chromium engine from dimming UI text and placeholders."
+  version: "v4.0",
+  title: "Premiere Timeline Export & Login Security",
+  description: "Typed email authentication, hidden password placeholders, and direct sequence rendering from Premiere Pro timelines."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -86,7 +85,6 @@ export default function App() {
   const isRemoteSyncRef = useRef(false);
   const lastUserActionRef = useRef(0);
 
-  // 📧 EMAIL DEBOUNCER STATE & REFS
   const emailDebounceTimersRef = useRef({});
   const sessionCommentsRef = useRef({});
 
@@ -201,6 +199,33 @@ export default function App() {
   const canvasRef = useRef(null);
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
+
+  // 🎬 LISTEN FOR DIRECT PREMIERE TIMELINE EXPORTS (CEP Window Bridge)
+  useEffect(() => {
+    const handlePremiereMessage = async (event) => {
+      if (event.data && event.data.type === 'PREMIERE_SEQUENCE_EXPORTED') {
+        const { fileUrl, fileName, sequenceName } = event.data;
+        if (fileUrl) {
+          setIsUploadOpen(true);
+          setNewVideoTitle(sequenceName || fileName || 'Premiere Timeline Cut');
+          setNewVideoUrl(fileUrl);
+          setUploadedFileName(fileName);
+        }
+      }
+    };
+
+    window.addEventListener('message', handlePremiereMessage);
+    return () => window.removeEventListener('message', handlePremiereMessage);
+  }, []);
+
+  // Trigger Premiere Pro sequence render via parent CEP bridge
+  const handleRenderPremiereTimeline = () => {
+    if (window.parent) {
+      window.parent.postMessage({ type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE' }, '*');
+    } else {
+      alert("Premiere timeline export is available inside the Premiere Pro extension panel.");
+    }
+  };
 
   // 📧 SEND CONSOLIDATED REVISION EMAIL
   const sendConsolidatedRevisionEmail = (videoId) => {
@@ -334,11 +359,11 @@ export default function App() {
   const handleManualEmailLogin = (e) => {
     e.preventDefault();
     if (!manualEmailInput.trim()) {
-      alert("Please select or enter your email address.");
+      alert("Please enter your email address.");
       return;
     }
     if (manualPasswordInput !== ADMIN_PASSWORD) {
-      alert("❌ Incorrect Password. Please enter the correct admin password (Thrive1234).");
+      alert("❌ Incorrect Password. Please enter the correct admin password.");
       return;
     }
     authenticateEmail(manualEmailInput, manualEmailInput.split('@')[0]);
@@ -1647,6 +1672,16 @@ export default function App() {
             </button>
           )}
 
+          {isAdmin && (
+            <button
+              onClick={handleRenderPremiereTimeline}
+              className="w-full flex items-center justify-center gap-2 bg-purple-900 hover:bg-purple-800 text-purple-200 font-bold py-2 px-3 rounded-lg border border-purple-700 text-xs transition"
+              title="Render active sequence from Premiere Pro timeline"
+            >
+              <Clapperboard size={14} /> Render Premiere Timeline
+            </button>
+          )}
+
           <button 
             onClick={() => {
               if (!isAdmin) {
@@ -2384,19 +2419,17 @@ export default function App() {
               </div>
             )}
 
+            {/* TYPED EMAIL & PASSWORD FORM */}
             <form onSubmit={handleManualEmailLogin} className="space-y-3 text-left bg-slate-950 p-4 border border-slate-800 rounded-xl">
               <div>
                 <label className="text-[10px] text-white font-bold uppercase block mb-1.5">Authorized Email Address</label>
-                <select
+                <input 
+                  type="email" 
+                  placeholder="e.g. jhorsch@thriverg.com"
                   value={manualEmailInput}
                   onChange={(e) => setManualEmailInput(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white font-bold text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                >
-                  <option value="">-- Select Admin Account --</option>
-                  {ALLOWED_ADMIN_EMAILS.map((e) => (
-                    <option key={e} value={e}>{e}</option>
-                  ))}
-                </select>
+                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-400 font-medium text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                />
               </div>
 
               <div>
@@ -2405,10 +2438,10 @@ export default function App() {
                 </label>
                 <input 
                   type="password" 
-                  placeholder="Enter Password (Thrive1234)"
+                  placeholder="Enter Password"
                   value={manualPasswordInput}
                   onChange={(e) => setManualPasswordInput(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-300 font-bold text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-400 font-bold text-xs rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
