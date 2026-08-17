@@ -24,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v4.7",
-  title: "Brute-Force Frame Decoder & Dedicated Render Settings Modal",
-  description: "Enforced frame seeking on load to eradicate black video screens and mounted export options modal."
+  version: "v4.8",
+  title: "CEP Copy Engine & Unlocked Asset Controls",
+  description: "Replaced JS prompt fallbacks with silent clipboard copying, unlocked delete controls in CEP, and fixed thumbnail decoding."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -91,9 +91,10 @@ export default function App() {
   const [copiedStatus, setCopiedStatus] = useState(false);
   const [isVideoProcessing, setIsVideoProcessing] = useState(true);
 
-  // 🎬 EXPORT RENDER OPTIONS MODAL STATE
+  // Premiere Export Settings
   const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
-  const [exportRange, setExportRange] = useState('1'); // 1 = Work Area / In-Out, 0 = Entire Sequence
+  const [exportRange, setExportRange] = useState('1'); // 1 = In to Out Range, 0 = Entire Sequence
+  const [exportPresetName, setExportPresetName] = useState('Match Source - Adaptive High Bitrate');
 
   const [user, setUser] = useState(() => {
     try {
@@ -104,7 +105,8 @@ export default function App() {
   const [manualEmailInput, setManualEmailInput] = useState('');
   const [manualPasswordInput, setManualPasswordInput] = useState('');
 
-  const isAdmin = Boolean(
+  // Unlocks admin powers inside CEP extension panel automatically
+  const isAdmin = isPremiereEnv || Boolean(
     user && 
     user.email && 
     ALLOWED_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(user.email.toLowerCase())
@@ -255,7 +257,8 @@ export default function App() {
       window.parent.postMessage({ 
         type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE',
         settings: {
-          exportRange: parseInt(exportRange, 10)
+          exportRange: parseInt(exportRange, 10),
+          presetName: exportPresetName
         }
       }, '*');
     }
@@ -275,6 +278,44 @@ export default function App() {
           setIsPlaying(false);
         });
       }
+    }
+  };
+
+  // 📋 SILENT COPY ENGINE - NO JAVASCRIPT PROMPT POPUPS
+  const handleCopyLink = (videoIdToCopy, e) => {
+    if (e) e.stopPropagation();
+    const targetId = videoIdToCopy || activeVideoId;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?v=${encodeURIComponent(targetId)}`;
+
+    window.history.replaceState(null, '', shareUrl);
+
+    const fallbackCopy = (text) => {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+      } catch (err) {}
+      document.body.removeChild(textArea);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        setCopiedStatus(true);
+        setTimeout(() => setCopiedStatus(false), 2500);
+      }).catch(() => {
+        fallbackCopy(shareUrl);
+        setCopiedStatus(true);
+        setTimeout(() => setCopiedStatus(false), 2500);
+      });
+    } else {
+      fallbackCopy(shareUrl);
+      setCopiedStatus(true);
+      setTimeout(() => setCopiedStatus(false), 2500);
     }
   };
 
@@ -402,7 +443,7 @@ export default function App() {
         localStorage.setItem('frameflow_author_name', authUser.name);
       } catch (e) {}
     } else {
-      alert(`🔒 Access Restricted:\n\n"${email}" is not in the authorized admin list.\n\nAllowed Admins:\n• ${ALLOWED_ADMIN_EMAILS.join('\n• ')}`);
+      alert(`🔒 Access Restricted:\n\n"${email}" is not in the authorized admin list.`);
     }
   };
 
@@ -474,7 +515,7 @@ export default function App() {
       e.preventDefault();
     }
     if (!isAdmin) {
-      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can change brand folders.");
+      alert("🔒 Admin Permission Required:\nOnly authorized admins can change brand folders.");
       return;
     }
 
@@ -485,10 +526,7 @@ export default function App() {
 
   const startRenameVideo = (videoId, currentTitle, e) => {
     if (e) e.stopPropagation();
-    if (!isAdmin) {
-      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can change video titles.");
-      return;
-    }
+    if (!isAdmin) return;
     setEditingTitleId(videoId);
     setTempTitleText(currentTitle);
   };
@@ -836,25 +874,6 @@ export default function App() {
       window.history.replaceState(null, '', window.location.pathname);
     }
   }, [currentView, activeVideoId]);
-
-  const handleCopyLink = (videoIdToCopy, e) => {
-    if (e) e.stopPropagation();
-    const targetId = videoIdToCopy || activeVideoId;
-    const shareUrl = `${window.location.origin}${window.location.pathname}?v=${encodeURIComponent(targetId)}`;
-
-    window.history.replaceState(null, '', shareUrl);
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        setCopiedStatus(true);
-        setTimeout(() => setCopiedStatus(false), 2500);
-      }).catch(() => {
-        prompt('Copy this direct video link:', shareUrl);
-      });
-    } else {
-      prompt('Copy this direct video link:', shareUrl);
-    }
-  };
 
   const handleDownloadVideo = async (e) => {
     if (e) e.stopPropagation();
@@ -1442,10 +1461,7 @@ export default function App() {
 
   const handleDeleteVideo = async (videoIdToDelete, e) => {
     if (e) e.stopPropagation();
-    if (!isAdmin) {
-      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can delete videos.");
-      return;
-    }
+    if (!isAdmin) return;
 
     const videoToDelete = videos.find(v => v.id === videoIdToDelete);
     if (!videoToDelete) return;
@@ -1852,7 +1868,7 @@ export default function App() {
                           playsInline 
                           preload="auto"
                           onLoadedData={(e) => {
-                            try { e.target.currentTime = 0.5; } catch(err){}
+                            try { e.target.currentTime = 0.1; } catch(err){}
                           }}
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
                         />
@@ -2088,7 +2104,7 @@ export default function App() {
                 className="relative aspect-video w-full max-w-5xl min-h-[280px] bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
                 onClick={handleCanvasClick}
               >
-                {/* ⏳ STREAM LOADING INDICATOR */}
+                {/* ⏳ STREAM LOADING OVERLAY */}
                 {isVideoProcessing && (
                   <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center p-6 space-y-3">
                     <Loader2 size={36} className="animate-spin text-indigo-500" />
@@ -2109,7 +2125,7 @@ export default function App() {
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                   onLoadedData={(e) => {
                     try {
-                      e.target.currentTime = 0.5;
+                      e.target.currentTime = 0.1;
                     } catch(err){}
                     setIsVideoProcessing(false);
                   }}
@@ -2512,6 +2528,19 @@ export default function App() {
                 >
                   <option value="1">In to Out Range (Work Area)</option>
                   <option value="0">Entire Sequence</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-white font-bold mb-1.5">Export Preset</label>
+                <select 
+                  value={exportPresetName} 
+                  onChange={(e) => setExportPresetName(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white font-bold rounded-lg p-2.5 focus:outline-none focus:border-purple-500"
+                >
+                  <option value="Match Source - Adaptive High Bitrate">H.264 - Match Source (Adaptive High Bitrate)</option>
+                  <option value="Match Source - High Bitrate">H.264 - Match Source (High Bitrate)</option>
+                  <option value="Match Source - Medium Bitrate">H.264 - Match Source (Medium Bitrate)</option>
                 </select>
               </div>
 
