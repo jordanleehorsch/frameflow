@@ -4,20 +4,14 @@ import {
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
   Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo, MapPin,
-  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound, Clapperboard
+  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound, Clapperboard, Settings, Sliders
 } from 'lucide-react';
 
-// ==========================================
-// 🚨 BUNNY.NET HARDCODED CREDENTIALS 🚨
-// ==========================================
 const BUNNY_STORAGE_ZONE = "thrive";
 const BUNNY_ACCESS_KEY = "d620773b-3709-413d-819288b64563-df1d-4b55";
 const BUNNY_STORAGE_API_URL = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}`;
 const BUNNY_PULL_ZONE_URL = "https://jordanhorsch.b-cdn.net/";
 
-// ==========================================
-// 🔐 AUTHORIZED ADMIN CREDENTIALS 🔐
-// ==========================================
 const ALLOWED_ADMIN_EMAILS = [
   'jhorsch@thriverg.com',
   'tramsey@thriverg.com',
@@ -30,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v4.5",
-  title: "Stream Timeout Safety & Enhanced Navigation",
-  description: "Fixed infinite processing spinner freeze, enlarged timeline render button, and added explicit Delete Video button."
+  version: "v4.7",
+  title: "Brute-Force Frame Decoder & Dedicated Render Settings Modal",
+  description: "Enforced frame seeking on load to eradicate black video screens and mounted export options modal."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -96,6 +90,10 @@ export default function App() {
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
   const [copiedStatus, setCopiedStatus] = useState(false);
   const [isVideoProcessing, setIsVideoProcessing] = useState(true);
+
+  // 🎬 EXPORT RENDER OPTIONS MODAL STATE
+  const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
+  const [exportRange, setExportRange] = useState('1'); // 1 = Work Area / In-Out, 0 = Entire Sequence
 
   const [user, setUser] = useState(() => {
     try {
@@ -207,15 +205,15 @@ export default function App() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // 🔓 SAFETY FALLBACK TIMER: Auto-unlock video loading overlay after 3.5 seconds
   useEffect(() => {
     setIsVideoProcessing(true);
     setCurrentTime(0);
     setDuration(0);
+    setIsPlaying(false);
 
     const safetyTimer = setTimeout(() => {
       setIsVideoProcessing(false);
-    }, 3500);
+    }, 2000);
 
     return () => clearTimeout(safetyTimer);
   }, [activeVideoId, activeVideo?.url]);
@@ -242,8 +240,6 @@ export default function App() {
           setVideos(prev => [newVidObj, ...prev.filter(v => v.id !== deterministicId)]);
           setActiveVideoId(deterministicId);
           setCurrentView('review');
-          
-          handleCopyLink(deterministicId);
         }
       }
     };
@@ -252,9 +248,33 @@ export default function App() {
     return () => window.removeEventListener('message', handlePremiereMessage);
   }, [selectedBrand]);
 
-  const handleRenderPremiereTimeline = () => {
+  const handleStartPremiereRenderSubmit = (e) => {
+    e.preventDefault();
+    setIsRenderModalOpen(false);
     if (window.parent) {
-      window.parent.postMessage({ type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE' }, '*');
+      window.parent.postMessage({ 
+        type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE',
+        settings: {
+          exportRange: parseInt(exportRange, 10)
+        }
+      }, '*');
+    }
+  };
+
+  const togglePlayPlayback = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        videoRef.current.play().then(() => {
+          setIsPlaying(true);
+          setIsVideoProcessing(false);
+        }).catch(err => {
+          console.error("Playback failed:", err);
+          setIsPlaying(false);
+        });
+      }
     }
   };
 
@@ -1703,10 +1723,10 @@ export default function App() {
             </button>
           )}
 
-          {/* 🎬 LARGER PREMIERE TIMELINE RENDER BUTTON */}
+          {/* 🎬 PREMIERE RENDER BUTTON */}
           {isPremiereEnv && (
             <button
-              onClick={handleRenderPremiereTimeline}
+              onClick={() => setIsRenderModalOpen(true)}
               className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wide transition shadow-xl shadow-purple-950/80 border border-purple-400/40"
               title="Render active sequence directly from Premiere Pro timeline"
             >
@@ -1825,11 +1845,15 @@ export default function App() {
                       className="group bg-slate-900 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30 relative flex flex-col"
                     >
                       <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
+                        {/* 🖼️ PROGRAMMATIC FRAME DECODER FOR THUMBNAILS */}
                         <video 
                           key={vid.url}
                           src={vid.url} 
                           playsInline 
-                          preload="metadata"
+                          preload="auto"
+                          onLoadedData={(e) => {
+                            try { e.target.currentTime = 0.5; } catch(err){}
+                          }}
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
                         />
                         <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition" />
@@ -2064,13 +2088,13 @@ export default function App() {
                 className="relative aspect-video w-full max-w-5xl min-h-[280px] bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
                 onClick={handleCanvasClick}
               >
-                {/* ⏳ STREAM PROCESSING INDICATOR OVERLAY */}
+                {/* ⏳ STREAM LOADING INDICATOR */}
                 {isVideoProcessing && (
                   <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center p-6 space-y-3">
                     <Loader2 size={36} className="animate-spin text-indigo-500" />
                     <div className="font-bold text-white text-sm">Processing & Syncing Video Stream...</div>
                     <div className="text-slate-400 text-xs max-w-xs leading-relaxed">
-                      Syncing stream metadata with CDN...
+                      Decoding media stream...
                     </div>
                   </div>
                 )}
@@ -2083,16 +2107,17 @@ export default function App() {
                   preload="auto"
                   className="w-full h-full object-contain"
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
+                  onLoadedData={(e) => {
+                    try {
+                      e.target.currentTime = 0.5;
+                    } catch(err){}
+                    setIsVideoProcessing(false);
+                  }}
                   onLoadedMetadata={() => {
                     setDuration(videoRef.current?.duration || 0);
                     setIsVideoProcessing(false);
                   }}
                   onCanPlay={() => setIsVideoProcessing(false)}
-                  onError={() => {
-                    setTimeout(() => {
-                      if (videoRef.current) videoRef.current.load();
-                    }, 2000);
-                  }}
                   onPlay={() => {
                     setIsPlaying(true);
                     setActivePin(null);
@@ -2291,15 +2316,7 @@ export default function App() {
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => {
-                        if (isPlaying) {
-                          videoRef.current?.pause();
-                          setIsPlaying(false);
-                        } else {
-                          videoRef.current?.play();
-                          setIsPlaying(true);
-                        }
-                      }}
+                      onClick={togglePlayPlayback}
                       className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
                     >
                       {isPlaying ? <Pause size={15} /> : <Play size={15} />}
@@ -2469,6 +2486,52 @@ export default function App() {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* 🎬 PREMIERE RENDER SETTINGS MODAL */}
+      {isRenderModalOpen && (
+        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <Sliders size={16} className="text-purple-400" /> Export Premiere Timeline
+              </h3>
+              <button onClick={() => setIsRenderModalOpen(false)} className="text-slate-300 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleStartPremiereRenderSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-white font-bold mb-1.5">Export Range</label>
+                <select 
+                  value={exportRange} 
+                  onChange={(e) => setExportRange(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white font-bold rounded-lg p-2.5 focus:outline-none focus:border-purple-500"
+                >
+                  <option value="1">In to Out Range (Work Area)</option>
+                  <option value="0">Entire Sequence</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsRenderModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-lg shadow-lg"
+                >
+                  Start Export & Upload
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
