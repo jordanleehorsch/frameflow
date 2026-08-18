@@ -24,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v4.8",
-  title: "CEP Copy Engine & Unlocked Asset Controls",
-  description: "Replaced JS prompt fallbacks with silent clipboard copying, unlocked delete controls in CEP, and fixed thumbnail decoding."
+  version: "v4.9",
+  title: "Automated Render Pipeline & Dynamic Frame Decoder",
+  description: "Direct background timeline rendering, silent clipboard link sharing, and instant keyframe thumbnail generation."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -91,10 +91,9 @@ export default function App() {
   const [copiedStatus, setCopiedStatus] = useState(false);
   const [isVideoProcessing, setIsVideoProcessing] = useState(true);
 
-  // Premiere Export Settings
+  // Premiere Export Settings Modal
   const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
-  const [exportRange, setExportRange] = useState('1'); // 1 = In to Out Range, 0 = Entire Sequence
-  const [exportPresetName, setExportPresetName] = useState('Match Source - Adaptive High Bitrate');
+  const [exportRange, setExportRange] = useState('1');
 
   const [user, setUser] = useState(() => {
     try {
@@ -105,7 +104,6 @@ export default function App() {
   const [manualEmailInput, setManualEmailInput] = useState('');
   const [manualPasswordInput, setManualPasswordInput] = useState('');
 
-  // Unlocks admin powers inside CEP extension panel automatically
   const isAdmin = isPremiereEnv || Boolean(
     user && 
     user.email && 
@@ -215,7 +213,7 @@ export default function App() {
 
     const safetyTimer = setTimeout(() => {
       setIsVideoProcessing(false);
-    }, 2000);
+    }, 2500);
 
     return () => clearTimeout(safetyTimer);
   }, [activeVideoId, activeVideo?.url]);
@@ -257,8 +255,7 @@ export default function App() {
       window.parent.postMessage({ 
         type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE',
         settings: {
-          exportRange: parseInt(exportRange, 10),
-          presetName: exportPresetName
+          exportRange: parseInt(exportRange, 10)
         }
       }, '*');
     }
@@ -281,7 +278,6 @@ export default function App() {
     }
   };
 
-  // 📋 SILENT COPY ENGINE - NO JAVASCRIPT PROMPT POPUPS
   const handleCopyLink = (videoIdToCopy, e) => {
     if (e) e.stopPropagation();
     const targetId = videoIdToCopy || activeVideoId;
@@ -1357,7 +1353,7 @@ export default function App() {
   const handleUploadSubmit = (e) => {
     e.preventDefault();
     if (!isAdmin) {
-      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can add videos.");
+      alert("🔒 Admin Permission Required:\nOnly authorized admins can add videos.");
       return;
     }
 
@@ -1390,7 +1386,7 @@ export default function App() {
   const handleReplaceSubmit = async (e) => {
     e.preventDefault();
     if (!isAdmin) {
-      alert("🔒 Admin Permission Required:\nOnly authorized signed-in admins can replace video cuts.");
+      alert("🔒 Admin Permission Required:\nOnly authorized admins can replace video cuts.");
       return;
     }
 
@@ -2528,19 +2524,6 @@ export default function App() {
                 >
                   <option value="1">In to Out Range (Work Area)</option>
                   <option value="0">Entire Sequence</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-white font-bold mb-1.5">Export Preset</label>
-                <select 
-                  value={exportPresetName} 
-                  onChange={(e) => setExportPresetName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white font-bold rounded-lg p-2.5 focus:outline-none focus:border-purple-500"
-                >
-                  <option value="Match Source - Adaptive High Bitrate">H.264 - Match Source (Adaptive High Bitrate)</option>
-                  <option value="Match Source - High Bitrate">H.264 - Match Source (High Bitrate)</option>
-                  <option value="Match Source - Medium Bitrate">H.264 - Match Source (Medium Bitrate)</option>
                 </select>
               </div>
 
