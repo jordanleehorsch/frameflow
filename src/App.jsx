@@ -24,9 +24,18 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.1",
-  title: "Multi-Preset Dynamic Engine & Silent Copy Pipeline",
-  description: "Universal preset resolver supporting custom .epr exports, silent clipboard copying, and auto-thumbnail decoding."
+  version: "v5.2",
+  title: "Global Utility Scope Fix",
+  description: "Hoisted formatTime to top-level module scope to eliminate uncaught React reference exceptions."
+};
+
+// 🌐 TOP-LEVEL GLOBAL UTILITY FUNCTIONS (PREVENTS SCOPE ERRORS)
+const formatTime = (seconds) => {
+  if (isNaN(seconds) || seconds === null || seconds === undefined) return '00:00.0';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 10);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms}`;
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -91,10 +100,8 @@ export default function App() {
   const [copiedStatus, setCopiedStatus] = useState(false);
   const [isVideoProcessing, setIsVideoProcessing] = useState(true);
 
-  // 🎬 EXPORT RENDER OPTIONS MODAL STATE
   const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
-  const [exportRange, setExportRange] = useState('1'); // 1 = Work Area / In-Out, 0 = Entire Sequence
-  const [exportPresetName, setExportPresetName] = useState('FrameFlow_Export');
+  const [exportRange, setExportRange] = useState('1');
 
   const [user, setUser] = useState(() => {
     try {
@@ -256,8 +263,7 @@ export default function App() {
       window.parent.postMessage({ 
         type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE',
         settings: {
-          exportRange: parseInt(exportRange, 10),
-          presetName: exportPresetName
+          exportRange: parseInt(exportRange, 10)
         }
       }, '*');
     }
@@ -1942,18 +1948,6 @@ export default function App() {
                 >
                   <option value="1">In to Out Range (Work Area)</option>
                   <option value="0">Entire Sequence</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-white font-bold mb-1.5">Export Preset</label>
-                <select 
-                  value={exportPresetName} 
-                  onChange={(e) => setExportPresetName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white font-bold rounded-lg p-2.5 focus:outline-none focus:border-purple-500"
-                >
-                  <option value="FrameFlow_Export">FrameFlow Export (Bundled H.264)</option>
-                  <option value="Match Source">Match Source - Adaptive High Bitrate</option>
                 </select>
               </div>
 
