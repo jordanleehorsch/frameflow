@@ -24,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.6",
-  title: "CEP Native Buffer Reader & Web Launcher",
-  description: "Added window.cep.fs binary reader for spaced Windows paths and enabled clicking FF logo to launch default web browser."
+  version: "v5.7",
+  title: "Persistent Deletion Blocklist & Buffer Lock Poller",
+  description: "Eliminated deleted video resurrection via persistent ID filtering and added file-lock polling for Premiere Pro renders."
 };
 
 // 🛡️ REACT ERROR BOUNDARY - PREVENTS GREY SCREEN COLLAPSE
@@ -136,6 +136,13 @@ function FrameFlowApp() {
   const isInitialLoadRef = useRef(true);
   const isRemoteSyncRef = useRef(false);
   const lastUserActionRef = useRef(0);
+
+  // 🚫 DELETED VIDEOS BLOCKLIST
+  const [deletedVideoIds, setDeletedVideoIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('frameflow_deleted_ids') || '[]');
+    } catch(e) { return []; }
+  });
 
   const emailDebounceTimersRef = useRef({});
   const sessionCommentsRef = useRef({});
@@ -257,7 +264,6 @@ function FrameFlowApp() {
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
 
-  // 🌐 LAUNCH DEFAULT WEB BROWSER HANDLER
   const handleOpenBrowserVersion = () => {
     const webUrl = "https://frameflow-umber.vercel.app";
     if (window.parent && window.parent !== window) {
@@ -731,6 +737,10 @@ function FrameFlowApp() {
           const filename = file.ObjectName;
           const publicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/${filename}`;
           const id = getDeterministicId(filename);
+
+          // Skip blocked/deleted IDs
+          if (deletedVideoIds.includes(id) || deletedVideoIds.includes(filename)) return;
+
           const meta = metaMap.get(id);
 
           let cleanTitle = filename
@@ -753,7 +763,7 @@ function FrameFlowApp() {
         if (cloudDb.videos && Array.isArray(cloudDb.videos)) {
           cloudDb.videos.forEach(cv => {
             const normId = getDeterministicId(cv.id || cv.url);
-            if (normId && bunnyVideoMap.has(normId)) {
+            if (normId && !deletedVideoIds.includes(normId) && bunnyVideoMap.has(normId)) {
               mergedVideoList.push(bunnyVideoMap.get(normId));
               bunnyVideoMap.delete(normId);
             }
@@ -781,7 +791,7 @@ function FrameFlowApp() {
     };
 
     fetchAllBunnyCloudAssets();
-  }, []);
+  }, [deletedVideoIds]);
 
   useEffect(() => {
     if (!isDbLoaded) return;
@@ -841,7 +851,7 @@ function FrameFlowApp() {
               const cloudVidMap = new Map();
               cloudDb.videos.forEach(cv => {
                 const normId = getDeterministicId(cv.id || cv.url);
-                if (normId) cloudVidMap.set(normId, cv);
+                if (normId && !deletedVideoIds.includes(normId)) cloudVidMap.set(normId, cv);
               });
 
               const cloudIds = Array.from(cloudVidMap.keys());
@@ -872,7 +882,7 @@ function FrameFlowApp() {
                   });
                 });
                 prevVideos.forEach(pv => {
-                  if (!cloudVidMap.has(pv.id)) {
+                  if (!cloudVidMap.has(pv.id) && !deletedVideoIds.includes(pv.id)) {
                     updatedList.push(pv);
                   }
                 });
@@ -890,7 +900,7 @@ function FrameFlowApp() {
     }, 3000);
 
     return () => clearInterval(liveSyncInterval);
-  }, [isDbLoaded, isSyncing]);
+  }, [isDbLoaded, isSyncing, deletedVideoIds]);
 
   useEffect(() => {
     if (!isDbLoaded || isInitialLoadRef.current) return;
@@ -933,6 +943,7 @@ function FrameFlowApp() {
     }
   }, [currentView, activeVideoId]);
 
+  // 🗑️ PERMANENT VIDEO DELETION HANDLER
   const handleDeleteVideo = async (videoIdToDelete, e) => {
     if (e) e.stopPropagation();
     if (!isAdmin) return;
@@ -940,25 +951,39 @@ function FrameFlowApp() {
     const videoToDelete = videos.find(v => v.id === videoIdToDelete);
     if (!videoToDelete) return;
 
-    if (window.confirm(`Are you sure you want to delete "${videoToDelete.title}"? This will permanently delete the file from Bunny CDN.`)) {
+    if (window.confirm(`Are you sure you want to delete "${videoToDelete.title}"? This will permanently remove the asset.`)) {
       setIsSyncing(true);
+      lastUserActionRef.current = Date.now();
+
+      const rawFileName = decodeURIComponent(videoToDelete.url.split('/').pop().split('?')[0]);
+      const updatedDeletedIds = Array.from(new Set([
+        ...deletedVideoIds, 
+        videoIdToDelete, 
+        rawFileName,
+        getDeterministicId(rawFileName)
+      ]));
+
+      setDeletedVideoIds(updatedDeletedIds);
+      try {
+        localStorage.setItem('frameflow_deleted_ids', JSON.stringify(updatedDeletedIds));
+      } catch(e) {}
 
       try {
-        const fileName = videoToDelete.url.split('/').pop();
-        if (fileName) {
-          const deleteUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${fileName}`;
+        if (rawFileName) {
+          const deleteUrl = `https://la.storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/${rawFileName}`;
           await fetch(deleteUrl, {
             method: 'DELETE',
             headers: { 'AccessKey': BUNNY_ACCESS_KEY }
           });
         }
       } catch (err) {
-        console.error("Error deleting file:", err);
+        console.error("Error deleting file from Bunny CDN:", err);
       }
 
-      lastUserActionRef.current = Date.now();
       const updatedVideos = videos.filter(v => v.id !== videoIdToDelete);
       setVideos(updatedVideos);
+
+      saveCloudDatabaseDirect(updatedVideos, drawings, comments, brands);
 
       if (activeVideoId === videoIdToDelete) {
         if (updatedVideos.length > 0) {
@@ -1100,7 +1125,7 @@ function FrameFlowApp() {
       <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
           <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between">
-            {/* 🌐 CLICKABLE BRAND LOGO -> OPENS WEB BROWSER VERSION */}
+            {/* 🌐 CLICKABLE BRAND LOGO -> OPENS DEFAULT BROWSER */}
             <div 
               onClick={handleOpenBrowserVersion}
               className="flex items-center gap-3 cursor-pointer hover:opacity-85 transition group"
