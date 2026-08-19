@@ -24,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.9",
-  title: "Complete Event Handler Scope & Stability Patch",
-  description: "Restored all missing drawing, comment, download, and upload event handlers to resolve runtime reference errors."
+  version: "v6.0",
+  title: "Unconditional Media Playback & Error Diagnostics",
+  description: "Removed strict CORS attribute restrictions on CDN video streams and added native media decoder error diagnostics."
 };
 
 // 🛡️ REACT ERROR BOUNDARY
@@ -149,6 +149,7 @@ function FrameFlowApp() {
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
   const [copiedStatus, setCopiedStatus] = useState(false);
   const [isVideoProcessing, setIsVideoProcessing] = useState(true);
+  const [videoLoadError, setVideoLoadError] = useState('');
 
   const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
   const [exportRange, setExportRange] = useState('1');
@@ -583,6 +584,7 @@ function FrameFlowApp() {
 
   useEffect(() => {
     setIsVideoProcessing(true);
+    setVideoLoadError('');
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
@@ -1673,7 +1675,6 @@ function FrameFlowApp() {
                           src={`${vid.url}#t=0.5`} 
                           playsInline 
                           preload="metadata"
-                          crossOrigin="anonymous"
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300 pointer-events-none" 
                         />
                         <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition pointer-events-none" />
@@ -1903,9 +1904,10 @@ function FrameFlowApp() {
 
             <div className="flex-1 flex flex-col justify-center items-center p-3 md:p-6 bg-slate-950 relative overflow-hidden min-h-[50vh]">
               <div 
-                className="relative aspect-video w-full max-w-5xl min-h-[280px] bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
+                className="relative aspect-video w-full max-w-5xl min-h-[280px] bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-pointer"
                 onClick={handleCanvasClick}
               >
+                {/* ⏳ STREAM LOADING OVERLAY */}
                 {isVideoProcessing && (
                   <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center p-6 space-y-3">
                     <Loader2 size={36} className="animate-spin text-indigo-500" />
@@ -1916,24 +1918,38 @@ function FrameFlowApp() {
                   </div>
                 )}
 
+                {/* ⚠️ VIDEO ERROR DIAGNOSTIC */}
+                {videoLoadError && (
+                  <div className="absolute inset-0 bg-red-950/90 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center p-6 space-y-2">
+                    <AlertTriangle size={32} className="text-red-400" />
+                    <div className="font-bold text-white text-sm">Video Stream Failed To Load</div>
+                    <p className="text-red-200 text-xs font-mono max-w-md bg-slate-900/80 p-2 rounded border border-red-800">{videoLoadError}</p>
+                  </div>
+                )}
+
+                {/* 🎬 MAIN VIDEO PLAYER ELEMENT (UNCONDITIONAL PLAYBACK) */}
                 <video
                   key={activeVideo?.url}
                   ref={videoRef}
                   src={activeVideo?.url}
                   playsInline
                   preload="auto"
-                  crossOrigin="anonymous"
-                  className="w-full h-full object-contain cursor-pointer"
+                  className="w-full h-full object-contain cursor-pointer relative z-10"
                   onClick={togglePlayPlayback}
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
-                  onLoadedData={() => {
+                  onLoadedMetadata={(e) => {
+                    if (e.target.duration && !isNaN(e.target.duration)) {
+                      setDuration(e.target.duration);
+                    }
                     setIsVideoProcessing(false);
-                  }}
-                  onLoadedMetadata={() => {
-                    setDuration(videoRef.current?.duration || 0);
-                    setIsVideoProcessing(false);
+                    setVideoLoadError('');
                   }}
                   onCanPlay={() => setIsVideoProcessing(false)}
+                  onError={(e) => {
+                    console.error("Video load error:", e);
+                    setIsVideoProcessing(false);
+                    setVideoLoadError(`Failed to decode media stream from ${activeVideo?.url || 'URL'}`);
+                  }}
                   onPlay={() => {
                     setIsPlaying(true);
                     setActivePin(null);
@@ -1952,7 +1968,7 @@ function FrameFlowApp() {
                   onTouchStart={startDrawing}
                   onTouchMove={draw}
                   onTouchEnd={stopDrawing}
-                  className={`absolute inset-0 w-full h-full object-contain ${
+                  className={`absolute inset-0 w-full h-full object-contain z-20 ${
                     isDrawingMode ? 'cursor-crosshair pointer-events-auto' : 'pointer-events-none'
                   }`}
                 />
