@@ -24,12 +24,12 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.7",
-  title: "Persistent Deletion Blocklist & Buffer Lock Poller",
-  description: "Eliminated deleted video resurrection via persistent ID filtering and added file-lock polling for Premiere Pro renders."
+  version: "v5.8",
+  title: "Direct Video Downloader & Region Lock Fix",
+  description: "Defined native handleDownloadVideo handler for instant browser media downloads and updated storage endpoints."
 };
 
-// 🛡️ REACT ERROR BOUNDARY - PREVENTS GREY SCREEN COLLAPSE
+// 🛡️ REACT ERROR BOUNDARY
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -72,7 +72,7 @@ class ErrorBoundary extends Component {
   }
 }
 
-// 🌐 TOP-LEVEL GLOBAL UTILITY FUNCTIONS
+// 🌐 UTILITY FUNCTIONS
 const formatTime = (seconds) => {
   if (isNaN(seconds) || seconds === null || seconds === undefined) return '00:00.0';
   const cleanSecs = Math.max(0, seconds);
@@ -137,7 +137,6 @@ function FrameFlowApp() {
   const isRemoteSyncRef = useRef(false);
   const lastUserActionRef = useRef(0);
 
-  // 🚫 DELETED VIDEOS BLOCKLIST
   const [deletedVideoIds, setDeletedVideoIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('frameflow_deleted_ids') || '[]');
@@ -263,6 +262,30 @@ function FrameFlowApp() {
   const canvasRef = useRef(null);
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
+
+  // 📥 DIRECT VIDEO DOWNLOAD HANDLER
+  const handleDownloadVideo = async () => {
+    if (!activeVideo || !activeVideo.url) return;
+    setIsDownloading(true);
+    try {
+      const response = await fetch(activeVideo.url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      const cleanTitle = (activeVideo.title || 'FrameFlow_Cut').replace(/[^a-zA-Z0-9_-]/g, '_');
+      link.download = `${cleanTitle}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.warn("Direct blob download failed, opening direct link...", err);
+      window.open(activeVideo.url, '_blank');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const handleOpenBrowserVersion = () => {
     const webUrl = "https://frameflow-umber.vercel.app";
@@ -738,7 +761,6 @@ function FrameFlowApp() {
           const publicUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/${filename}`;
           const id = getDeterministicId(filename);
 
-          // Skip blocked/deleted IDs
           if (deletedVideoIds.includes(id) || deletedVideoIds.includes(filename)) return;
 
           const meta = metaMap.get(id);
@@ -781,7 +803,8 @@ function FrameFlowApp() {
         }
       } catch (err) {
         console.error("Error fetching assets:", err);
-      } finally {
+      } font-medium
+      finally {
         setIsDbLoaded(true);
         setIsSyncing(false);
         setTimeout(() => {
@@ -943,7 +966,6 @@ function FrameFlowApp() {
     }
   }, [currentView, activeVideoId]);
 
-  // 🗑️ PERMANENT VIDEO DELETION HANDLER
   const handleDeleteVideo = async (videoIdToDelete, e) => {
     if (e) e.stopPropagation();
     if (!isAdmin) return;
@@ -1061,6 +1083,11 @@ function FrameFlowApp() {
     }, 800);
   };
 
+  const openVideoReview = (vidId) => {
+    setActiveVideoId(vidId);
+    setCurrentView('review');
+  };
+
   const targetVidId = activeVideo?.id || activeVideoId;
   const allVideoComments = comments.filter(c => c.videoId === targetVidId);
 
@@ -1096,7 +1123,6 @@ function FrameFlowApp() {
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
       
-      {/* 🚨 FORCED CSS OVERRIDES FOR ADOBE CEP CHROMIUM EMBEDDED PANELS 🚨 */}
       <style>{`
         body, div, span, p, label, select, input, button {
           color-scheme: dark !important;
@@ -1125,7 +1151,6 @@ function FrameFlowApp() {
       <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
           <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between">
-            {/* 🌐 CLICKABLE BRAND LOGO -> OPENS DEFAULT BROWSER */}
             <div 
               onClick={handleOpenBrowserVersion}
               className="flex items-center gap-3 cursor-pointer hover:opacity-85 transition group"
@@ -1162,7 +1187,7 @@ function FrameFlowApp() {
             </button>
           </div>
 
-          {/* 📂 BRAND WORKSPACE & ADMIN FOLDER MANAGEMENT */}
+          {/* BRAND WORKSPACE */}
           <div className="px-3 py-2 md:px-4 md:py-3 border-t border-slate-800/80 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[10px] md:text-[11px] font-bold text-white uppercase tracking-wider block cep-bright-label">Brand Workspace</label>
@@ -1245,7 +1270,6 @@ function FrameFlowApp() {
             </button>
           )}
 
-          {/* 🎬 PREMIERE RENDER BUTTON */}
           {isPremiereEnv && (
             <button
               onClick={() => setIsRenderModalOpen(true)}
@@ -1275,7 +1299,7 @@ function FrameFlowApp() {
         </div>
       </div>
 
-      {/* VIEW 1: DASHBOARD HUB */}
+      {/* DASHBOARD VIEW */}
       {currentView === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950">
           
@@ -1321,7 +1345,6 @@ function FrameFlowApp() {
           </div>
 
           <div className="p-3 md:p-8 max-w-7xl mx-auto w-full space-y-4">
-            
             {showUpdateBanner && (
               <div className="bg-indigo-950 border border-indigo-500/60 rounded-xl p-3 flex items-start justify-between gap-3 text-xs shadow-lg relative overflow-hidden">
                 <div className="flex items-start gap-2.5">
@@ -1476,7 +1499,7 @@ function FrameFlowApp() {
         </div>
       )}
 
-      {/* VIEW 2: FRAMEFLOW VIDEO REVIEW PLAYER STUDIO */}
+      {/* REVIEW VIEW */}
       {currentView === 'review' && activeVideo && (
         <div className="flex-1 flex flex-col lg:flex-row bg-slate-950 min-w-0 overflow-y-auto lg:overflow-hidden">
           
@@ -1582,7 +1605,6 @@ function FrameFlowApp() {
                   </button>
                 )}
 
-                {/* 🗑️ EXPLICIT DELETE VIDEO BUTTON */}
                 {isAdmin && (
                   <button 
                     onClick={(e) => handleDeleteVideo(activeVideoId, e)}
@@ -1607,7 +1629,6 @@ function FrameFlowApp() {
                 className="relative aspect-video w-full max-w-5xl min-h-[280px] bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center cursor-crosshair"
                 onClick={handleCanvasClick}
               >
-                {/* ⏳ STREAM LOADING OVERLAY */}
                 {isVideoProcessing && (
                   <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center p-6 space-y-3">
                     <Loader2 size={36} className="animate-spin text-indigo-500" />
@@ -2007,7 +2028,7 @@ function FrameFlowApp() {
         </div>
       )}
 
-      {/* 🎬 PREMIERE RENDER SETTINGS MODAL */}
+      {/* RENDER MODAL */}
       {isRenderModalOpen && (
         <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
@@ -2053,7 +2074,7 @@ function FrameFlowApp() {
         </div>
       )}
 
-      {/* 🔐 AUTHENTICATION MODAL */}
+      {/* AUTH MODAL */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center">
@@ -2119,7 +2140,7 @@ function FrameFlowApp() {
         </div>
       )}
 
-      {/* 📂 ADD BRAND FOLDER MODAL */}
+      {/* CREATE FOLDER MODAL */}
       {isAddFolderModalOpen && isAdmin && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
@@ -2166,7 +2187,7 @@ function FrameFlowApp() {
         </div>
       )}
 
-      {/* ✏️ RENAME BRAND FOLDER MODAL */}
+      {/* RENAME FOLDER MODAL */}
       {isRenameFolderModalOpen && isAdmin && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
@@ -2312,7 +2333,7 @@ function FrameFlowApp() {
         </div>
       )}
 
-      {/* REPLACE VIDEO MODAL */}
+      {/* REPLACE MODAL */}
       {isReplaceOpen && isAdmin && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
