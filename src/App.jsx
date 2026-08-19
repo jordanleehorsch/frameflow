@@ -24,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.0",
-  title: "Vimeo-Style Render & Upload Engine",
-  description: "Bundled preset architecture, automatic video frame decoding, and silent clipboard sharing."
+  version: "v5.1",
+  title: "Multi-Preset Dynamic Engine & Silent Copy Pipeline",
+  description: "Universal preset resolver supporting custom .epr exports, silent clipboard copying, and auto-thumbnail decoding."
 };
 
 const getDeterministicId = (filenameOrUrl) => {
@@ -91,8 +91,10 @@ export default function App() {
   const [copiedStatus, setCopiedStatus] = useState(false);
   const [isVideoProcessing, setIsVideoProcessing] = useState(true);
 
+  // 🎬 EXPORT RENDER OPTIONS MODAL STATE
   const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
-  const [exportRange, setExportRange] = useState('1');
+  const [exportRange, setExportRange] = useState('1'); // 1 = Work Area / In-Out, 0 = Entire Sequence
+  const [exportPresetName, setExportPresetName] = useState('FrameFlow_Export');
 
   const [user, setUser] = useState(() => {
     try {
@@ -254,7 +256,8 @@ export default function App() {
       window.parent.postMessage({ 
         type: 'RENDER_PREMIERE_ACTIVE_SEQUENCE',
         settings: {
-          exportRange: parseInt(exportRange, 10)
+          exportRange: parseInt(exportRange, 10),
+          presetName: exportPresetName
         }
       }, '*');
     }
@@ -1272,7 +1275,7 @@ export default function App() {
                       className="group bg-slate-900 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30 relative flex flex-col"
                     >
                       <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
-                        {/* 🖼️ THUMBNAIL DECODER */}
+                        {/* 🖼️ PROGRAMMATIC FRAME DECODER FOR THUMBNAILS */}
                         <video 
                           key={vid.url}
                           src={vid.url} 
@@ -1939,6 +1942,18 @@ export default function App() {
                 >
                   <option value="1">In to Out Range (Work Area)</option>
                   <option value="0">Entire Sequence</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-white font-bold mb-1.5">Export Preset</label>
+                <select 
+                  value={exportPresetName} 
+                  onChange={(e) => setExportPresetName(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white font-bold rounded-lg p-2.5 focus:outline-none focus:border-purple-500"
+                >
+                  <option value="FrameFlow_Export">FrameFlow Export (Bundled H.264)</option>
+                  <option value="Match Source">Match Source - Adaptive High Bitrate</option>
                 </select>
               </div>
 
