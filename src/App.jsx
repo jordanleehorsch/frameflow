@@ -24,12 +24,11 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.3",
-  title: "Unblocked Card Click Engine & Lightweight Media Fragments",
-  description: "Fixed thumbnail media thread lockups using native #t=0.5 fragments and transparent pointer event routing."
+  version: "v5.4",
+  title: "Native Path Formatting & Reliable Media Playback",
+  description: "Fixed Windows C++ exporter initialization errors and restored direct click-to-play media bindings."
 };
 
-// 🌐 TOP-LEVEL GLOBAL UTILITY FUNCTIONS
 const formatTime = (seconds) => {
   if (isNaN(seconds) || seconds === null || seconds === undefined) return '00:00.0';
   const cleanSecs = Math.max(0, seconds);
@@ -1281,13 +1280,13 @@ export default function App() {
                       onClick={() => openVideoReview(vid.id)}
                       className="group bg-slate-900 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30 relative flex flex-col"
                     >
-                      {/* 🖼️ UNBLOCKED NATIVE THUMBNAIL CONTAINER */}
                       <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center pointer-events-none">
                         <video 
                           key={vid.url}
                           src={`${vid.url}#t=0.5`} 
                           playsInline 
                           preload="metadata"
+                          crossOrigin="anonymous"
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300 pointer-events-none" 
                         />
                         <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition pointer-events-none" />
@@ -1539,6 +1538,7 @@ export default function App() {
                   src={activeVideo?.url}
                   playsInline
                   preload="auto"
+                  crossOrigin="anonymous"
                   className="w-full h-full object-contain"
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                   onLoadedData={() => {
@@ -1748,7 +1748,7 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <button
                       onClick={togglePlayPlayback}
-                      className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
+                      className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition cursor-pointer"
                     >
                       {isPlaying ? <Pause size={15} /> : <Play size={15} />}
                     </button>
