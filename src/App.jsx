@@ -24,17 +24,18 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.2",
-  title: "Global Utility Scope Fix",
-  description: "Hoisted formatTime to top-level module scope to eliminate uncaught React reference exceptions."
+  version: "v5.3",
+  title: "Unblocked Card Click Engine & Lightweight Media Fragments",
+  description: "Fixed thumbnail media thread lockups using native #t=0.5 fragments and transparent pointer event routing."
 };
 
-// 🌐 TOP-LEVEL GLOBAL UTILITY FUNCTIONS (PREVENTS SCOPE ERRORS)
+// 🌐 TOP-LEVEL GLOBAL UTILITY FUNCTIONS
 const formatTime = (seconds) => {
   if (isNaN(seconds) || seconds === null || seconds === undefined) return '00:00.0';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 10);
+  const cleanSecs = Math.max(0, seconds);
+  const mins = Math.floor(cleanSecs / 60);
+  const secs = Math.floor(cleanSecs % 60);
+  const ms = Math.floor((cleanSecs % 1) * 10);
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms}`;
 };
 
@@ -221,7 +222,7 @@ export default function App() {
 
     const safetyTimer = setTimeout(() => {
       setIsVideoProcessing(false);
-    }, 2000);
+    }, 1800);
 
     return () => clearTimeout(safetyTimer);
   }, [activeVideoId, activeVideo?.url]);
@@ -1280,31 +1281,28 @@ export default function App() {
                       onClick={() => openVideoReview(vid.id)}
                       className="group bg-slate-900 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition hover:shadow-xl hover:shadow-indigo-950/30 relative flex flex-col"
                     >
-                      <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
-                        {/* 🖼️ PROGRAMMATIC FRAME DECODER FOR THUMBNAILS */}
+                      {/* 🖼️ UNBLOCKED NATIVE THUMBNAIL CONTAINER */}
+                      <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center pointer-events-none">
                         <video 
                           key={vid.url}
-                          src={vid.url} 
+                          src={`${vid.url}#t=0.5`} 
                           playsInline 
-                          preload="auto"
-                          onLoadedData={(e) => {
-                            try { e.target.currentTime = 0.1; } catch(err){}
-                          }}
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
+                          preload="metadata"
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300 pointer-events-none" 
                         />
-                        <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition" />
+                        <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition pointer-events-none" />
                         
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                          <div className="p-2 bg-indigo-600 rounded-full text-white shadow-lg">
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition pointer-events-none">
+                          <div className="p-2 bg-indigo-600 rounded-full text-white shadow-lg pointer-events-none">
                             <Play size={16} fill="white" />
                           </div>
                         </div>
 
-                        <div className="absolute bottom-1.5 right-1.5 bg-black/80 px-1 py-0.5 rounded text-[9px] font-mono text-white font-bold">
+                        <div className="absolute bottom-1.5 right-1.5 bg-black/80 px-1 py-0.5 rounded text-[9px] font-mono text-white font-bold pointer-events-none">
                           {formatTime(vid.duration)}
                         </div>
 
-                        <div className="absolute top-1.5 left-1.5">
+                        <div className="absolute top-1.5 left-1.5 pointer-events-none">
                           <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow ${
                             vid.status === 'Approved' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' :
                             vid.status === 'Changes Requested' ? 'bg-amber-950 text-amber-300 border border-amber-800' :
@@ -1543,10 +1541,7 @@ export default function App() {
                   preload="auto"
                   className="w-full h-full object-contain"
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
-                  onLoadedData={(e) => {
-                    try {
-                      e.target.currentTime = 0.1;
-                    } catch(err){}
+                  onLoadedData={() => {
                     setIsVideoProcessing(false);
                   }}
                   onLoadedMetadata={() => {
