@@ -4,7 +4,7 @@ import {
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
   Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo, MapPin,
-  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound, Clapperboard, Settings, Sliders, AlertTriangle
+  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound, Clapperboard, Settings, Sliders, AlertTriangle, ExternalLink
 } from 'lucide-react';
 
 const BUNNY_STORAGE_ZONE = "thrive";
@@ -24,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.5",
-  title: "Error Boundary Protection & Fail-Safe Rendering",
-  description: "Implemented React Error Boundaries to prevent grey-screen collapses and capture runtime exceptions gracefully."
+  version: "v5.6",
+  title: "CEP Native Buffer Reader & Web Launcher",
+  description: "Added window.cep.fs binary reader for spaced Windows paths and enabled clicking FF logo to launch default web browser."
 };
 
 // 🛡️ REACT ERROR BOUNDARY - PREVENTS GREY SCREEN COLLAPSE
@@ -256,6 +256,16 @@ function FrameFlowApp() {
   const canvasRef = useRef(null);
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
+
+  // 🌐 LAUNCH DEFAULT WEB BROWSER HANDLER
+  const handleOpenBrowserVersion = () => {
+    const webUrl = "https://frameflow-umber.vercel.app";
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'OPEN_EXTERNAL_URL', url: webUrl }, '*');
+    } else {
+      window.open(webUrl, '_blank');
+    }
+  };
 
   useEffect(() => {
     setIsVideoProcessing(true);
@@ -1090,10 +1100,17 @@ function FrameFlowApp() {
       <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
           <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-base md:text-lg shadow-lg shadow-indigo-950">FF</div>
+            {/* 🌐 CLICKABLE BRAND LOGO -> OPENS WEB BROWSER VERSION */}
+            <div 
+              onClick={handleOpenBrowserVersion}
+              className="flex items-center gap-3 cursor-pointer hover:opacity-85 transition group"
+              title="Open FrameFlow in Default Web Browser"
+            >
+              <div className="p-2 bg-indigo-600 rounded-xl text-white font-bold text-base md:text-lg shadow-lg shadow-indigo-950 group-hover:scale-105 transition flex-shrink-0">FF</div>
               <div>
-                <div className="font-bold text-sm md:text-base tracking-wide text-white leading-none">FrameFlow</div>
+                <div className="font-bold text-sm md:text-base tracking-wide text-white leading-none flex items-center gap-1.5">
+                  FrameFlow <ExternalLink size={11} className="text-indigo-400 opacity-60 group-hover:opacity-100 transition" />
+                </div>
                 <div className="text-[10px] cep-subtext mt-1 font-semibold">Video Studio Pro</div>
               </div>
             </div>
@@ -2396,7 +2413,6 @@ function FrameFlowApp() {
   );
 }
 
-// 🛡️ EXPORT APP WRAPPED IN ERROR BOUNDARY
 export default function App() {
   return (
     <ErrorBoundary>
