@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, Component } from 'react';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Pencil, MessageSquare, 
   Check, Plus, RefreshCw, Upload, Folder, Send, Trash2, Sparkles, 
   Clock, Share2, Download, X, RotateCcw, Loader2, Home, BarChart2, 
   Search, Video, Layers, ArrowLeft, Eye, Users, MoreVertical, Filter, ArrowUpDown, Bell, Undo, MapPin,
-  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound, Clapperboard, Settings, Sliders
+  Lock, LogIn, LogOut, ShieldCheck, FolderPlus, Edit3, KeyRound, Clapperboard, Settings, Sliders, AlertTriangle
 } from 'lucide-react';
 
 const BUNNY_STORAGE_ZONE = "thrive";
@@ -24,11 +24,55 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.4",
-  title: "Native Path Formatting & Reliable Media Playback",
-  description: "Fixed Windows C++ exporter initialization errors and restored direct click-to-play media bindings."
+  version: "v5.5",
+  title: "Error Boundary Protection & Fail-Safe Rendering",
+  description: "Implemented React Error Boundaries to prevent grey-screen collapses and capture runtime exceptions gracefully."
 };
 
+// 🛡️ REACT ERROR BOUNDARY - PREVENTS GREY SCREEN COLLAPSE
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("FrameFlow React Error Boundary Captured Exception:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen w-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-white">
+          <div className="p-3 bg-red-950/80 border border-red-700/80 rounded-2xl max-w-md w-full space-y-3 shadow-2xl">
+            <div className="flex items-center justify-center gap-2 text-red-400 font-bold text-sm">
+              <AlertTriangle size={20} /> FrameFlow Error Caught
+            </div>
+            <p className="text-xs text-slate-300 font-mono bg-slate-900 p-3 rounded-lg border border-slate-800 text-left overflow-x-auto max-h-36">
+              {this.state.error?.toString() || "Unknown rendering exception"}
+            </p>
+            <button
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+              className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition"
+            >
+              Clear Storage & Reset Studio
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// 🌐 TOP-LEVEL GLOBAL UTILITY FUNCTIONS
 const formatTime = (seconds) => {
   if (isNaN(seconds) || seconds === null || seconds === undefined) return '00:00.0';
   const cleanSecs = Math.max(0, seconds);
@@ -72,7 +116,7 @@ const moveVideoToTopWithStatus = (videoList, targetId, newStatus) => {
   return [{ ...target, status: newStatus }, ...remaining];
 };
 
-export default function App() {
+function FrameFlowApp() {
   const initialVideoParamRef = useRef(
     new URLSearchParams(window.location.search).get('v') || 
     new URLSearchParams(window.location.search).get('video')
@@ -1539,7 +1583,8 @@ export default function App() {
                   playsInline
                   preload="auto"
                   crossOrigin="anonymous"
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-contain cursor-pointer"
+                  onClick={togglePlayPlayback}
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                   onLoadedData={() => {
                     setIsVideoProcessing(false);
@@ -2348,5 +2393,14 @@ export default function App() {
       )}
 
     </div>
+  );
+}
+
+// 🛡️ EXPORT APP WRAPPED IN ERROR BOUNDARY
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <FrameFlowApp />
+    </ErrorBoundary>
   );
 }
