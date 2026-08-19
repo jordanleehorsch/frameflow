@@ -24,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v5.8",
-  title: "Direct Video Downloader & Region Lock Fix",
-  description: "Defined native handleDownloadVideo handler for instant browser media downloads and updated storage endpoints."
+  version: "v5.9",
+  title: "Complete Event Handler Scope & Stability Patch",
+  description: "Restored all missing drawing, comment, download, and upload event handlers to resolve runtime reference errors."
 };
 
 // 🛡️ REACT ERROR BOUNDARY
@@ -262,6 +262,7 @@ function FrameFlowApp() {
   const canvasRef = useRef(null);
 
   const activeVideo = videos.find(v => v.id === activeVideoId) || videos[0] || null;
+  const targetVidId = activeVideo?.id || activeVideoId;
 
   // 📥 DIRECT VIDEO DOWNLOAD HANDLER
   const handleDownloadVideo = async () => {
@@ -287,6 +288,7 @@ function FrameFlowApp() {
     }
   };
 
+  // 🌐 OPEN BROWSER HANDLER
   const handleOpenBrowserVersion = () => {
     const webUrl = "https://frameflow-umber.vercel.app";
     if (window.parent && window.parent !== window) {
@@ -294,6 +296,289 @@ function FrameFlowApp() {
     } else {
       window.open(webUrl, '_blank');
     }
+  };
+
+  // 🎨 CANVAS DRAWING HANDLERS
+  const startDrawing = (e) => {
+    if (!isDrawingMode) return;
+    setIsMouseDown(true);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const x = ((clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * canvas.height;
+    setCurrentPath([{ x, y }]);
+  };
+
+  const draw = (e) => {
+    if (!isMouseDown || !isDrawingMode) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const x = ((clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * canvas.height;
+
+    const newPath = [...currentPath, { x, y }];
+    setCurrentPath(newPath);
+
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = strokeWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (newPath.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(newPath[newPath.length - 2].x, newPath[newPath.length - 2].y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+  };
+
+  const stopDrawing = () => {
+    if (!isMouseDown || !isDrawingMode) return;
+    setIsMouseDown(false);
+    if (currentPath.length > 0) {
+      const vidKey = targetVidId;
+      const frameKey = Math.floor(currentTime * 10) / 10;
+      const newStroke = { path: currentPath, color: strokeColor, width: strokeWidth };
+      
+      setDrawings(prev => {
+        const vidDrawings = prev[vidKey] || {};
+        const frameStrokes = vidDrawings[frameKey] || [];
+        return {
+          ...prev,
+          [vidKey]: {
+            ...vidDrawings,
+            [frameKey]: [...frameStrokes, newStroke]
+          }
+        };
+      });
+      setCurrentPath([]);
+    }
+  };
+
+  const handleUndoDrawing = () => {
+    const vidKey = targetVidId;
+    const frameKey = Math.floor(currentTime * 10) / 10;
+    setDrawings(prev => {
+      const vidDrawings = prev[vidKey] || {};
+      const frameStrokes = vidDrawings[frameKey] || [];
+      if (frameStrokes.length === 0) return prev;
+      return {
+        ...prev,
+        [vidKey]: {
+          ...vidDrawings,
+          [frameKey]: frameStrokes.slice(0, -1)
+        }
+      };
+    });
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const vidKey = targetVidId;
+    const frameKey = Math.floor(currentTime * 10) / 10;
+    const frameStrokes = drawings[vidKey]?.[frameKey] || [];
+
+    frameStrokes.forEach(stroke => {
+      if (stroke.path && stroke.path.length > 0) {
+        ctx.strokeStyle = stroke.color || '#EF4444';
+        ctx.lineWidth = stroke.width || 8;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(stroke.path[0].x, stroke.path[0].y);
+        for (let i = 1; i < stroke.path.length; i++) {
+          ctx.lineTo(stroke.path[i].x, stroke.path[i].y);
+        }
+        ctx.stroke();
+      }
+    });
+  }, [currentTime, drawings, targetVidId]);
+
+  // 📍 PIN & COMMENT HANDLERS
+  const handleCanvasClick = (e) => {
+    if (isDrawingMode || activePin) return;
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+    const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
+
+    setActivePin({
+      xPercent,
+      yPercent,
+      timestamp: currentTime,
+      timeFormatted: formatTime(currentTime)
+    });
+    setInlinePinText('');
+  };
+
+  const handlePostInlinePinComment = (e) => {
+    e.preventDefault();
+    if (!inlinePinText.trim() || !activePin) return;
+
+    const newComment = {
+      id: 'comment-' + Date.now(),
+      videoId: targetVidId,
+      author: authorName || 'Reviewer',
+      text: inlinePinText.trim(),
+      timestamp: activePin.timestamp,
+      timeFormatted: activePin.timeFormatted,
+      completed: false,
+      createdAt: new Date().toISOString(),
+      pinLocation: { x: activePin.xPercent, y: activePin.yPercent }
+    };
+
+    lastUserActionRef.current = Date.now();
+    setComments(prev => [newComment, ...prev]);
+    queueCommentForEmailDigest(newComment, targetVidId);
+    setActivePin(null);
+    setInlinePinText('');
+  };
+
+  const handleAddComment = (e) => {
+    e.preventDefault();
+    if (!commentText.trim()) return;
+
+    const newComment = {
+      id: 'comment-' + Date.now(),
+      videoId: targetVidId,
+      author: authorName || 'Reviewer',
+      text: commentText.trim(),
+      timestamp: currentTime,
+      timeFormatted: formatTime(currentTime),
+      completed: false,
+      createdAt: new Date().toISOString()
+    };
+
+    lastUserActionRef.current = Date.now();
+    setComments(prev => [newComment, ...prev]);
+    queueCommentForEmailDigest(newComment, targetVidId);
+    setCommentText('');
+  };
+
+  const toggleCommentComplete = (commentId, e) => {
+    if (e) e.stopPropagation();
+    lastUserActionRef.current = Date.now();
+    setComments(prev => prev.map(c => c.id === commentId ? { ...c, completed: !c.completed } : c));
+  };
+
+  const handleDeleteComment = (commentId, e) => {
+    if (e) e.stopPropagation();
+    lastUserActionRef.current = Date.now();
+    setComments(prev => prev.filter(c => c.id !== commentId));
+  };
+
+  // 📤 UPLOAD HANDLERS
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setUploadedFileName(file.name);
+    if (!newVideoTitle) {
+      setNewVideoTitle(file.name.replace(/\.[^/.]+$/, "").replace(/_/g, ' '));
+    }
+
+    setIsUploadingToCdn(true);
+    setUploadProgress(5);
+
+    try {
+      const cleanFileName = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const uploadUrl = `${BUNNY_STORAGE_API_URL}/${cleanFileName}`;
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', uploadUrl, true);
+      xhr.setRequestHeader('AccessKey', BUNNY_ACCESS_KEY);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const cdnUrl = `${BUNNY_PULL_ZONE_URL.replace(/\/$/, '')}/${cleanFileName}`;
+          setNewVideoUrl(cdnUrl);
+          setUploadProgress(100);
+        } else {
+          alert(`⚠️ Upload failed with status ${xhr.status}`);
+        }
+        setIsUploadingToCdn(false);
+      };
+
+      xhr.onerror = () => {
+        alert('⚠️ Upload network error');
+        setIsUploadingToCdn(false);
+      };
+
+      xhr.send(file);
+    } catch (err) {
+      console.error("Upload error:", err);
+      setIsUploadingToCdn(false);
+    }
+  };
+
+  const handleUploadSubmit = (e) => {
+    e.preventDefault();
+    if (!newVideoUrl.trim() && !uploadedFileName) {
+      alert("Please select a video file or enter a direct video URL.");
+      return;
+    }
+
+    const cleanTitle = newVideoTitle.trim() || uploadedFileName || 'Untitled Video';
+    const deterministicId = getDeterministicId(newVideoUrl || cleanTitle);
+
+    const newVidObj = {
+      id: deterministicId,
+      title: cleanTitle,
+      brand: newVideoBrand || 'Thrive',
+      url: newVideoUrl.trim(),
+      status: 'In Review',
+      createdAt: new Date().toISOString(),
+      duration: 30
+    };
+
+    lastUserActionRef.current = Date.now();
+    setVideos(prev => [newVidObj, ...prev.filter(v => v.id !== deterministicId)]);
+    setActiveVideoId(deterministicId);
+    resetUploadForm();
+    setIsUploadOpen(false);
+    setCurrentView('review');
+  };
+
+  const handleReplaceSubmit = (e) => {
+    e.preventDefault();
+    if (!newVideoUrl.trim()) {
+      alert("Please upload a file or paste a new video URL.");
+      return;
+    }
+
+    lastUserActionRef.current = Date.now();
+    setVideos(prev => prev.map(v => v.id === activeVideoId ? {
+      ...v,
+      url: newVideoUrl.trim(),
+      title: newVideoTitle.trim() || v.title
+    } : v));
+
+    resetUploadForm();
+    setIsReplaceOpen(false);
   };
 
   useEffect(() => {
@@ -803,8 +1088,7 @@ function FrameFlowApp() {
         }
       } catch (err) {
         console.error("Error fetching assets:", err);
-      } font-medium
-      finally {
+      } finally {
         setIsDbLoaded(true);
         setIsSyncing(false);
         setTimeout(() => {
@@ -1069,7 +1353,6 @@ function FrameFlowApp() {
   const generateAiActionPlan = () => {
     setIsAiLoading(true);
     setIsAiModalOpen(true);
-    const targetVidId = activeVideo?.id || activeVideoId;
     const videoComments = comments.filter(c => c.videoId === targetVidId);
 
     setTimeout(() => {
@@ -1088,7 +1371,6 @@ function FrameFlowApp() {
     setCurrentView('review');
   };
 
-  const targetVidId = activeVideo?.id || activeVideoId;
   const allVideoComments = comments.filter(c => c.videoId === targetVidId);
 
   const filteredComments = allVideoComments.filter(c => {
@@ -1122,7 +1404,6 @@ function FrameFlowApp() {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
-      
       <style>{`
         body, div, span, p, label, select, input, button {
           color-scheme: dark !important;
@@ -1146,8 +1427,8 @@ function FrameFlowApp() {
           opacity: 1 !important;
         }
       `}</style>
-      
-      {/* GLOBAL SIDEBAR */}
+
+      {/* SIDEBAR */}
       <div className="w-full md:w-60 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between flex-shrink-0 z-30">
         <div>
           <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between">
@@ -1187,7 +1468,6 @@ function FrameFlowApp() {
             </button>
           </div>
 
-          {/* BRAND WORKSPACE */}
           <div className="px-3 py-2 md:px-4 md:py-3 border-t border-slate-800/80 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[10px] md:text-[11px] font-bold text-white uppercase tracking-wider block cep-bright-label">Brand Workspace</label>
@@ -1232,7 +1512,6 @@ function FrameFlowApp() {
           </div>
         </div>
 
-        {/* SIDEBAR BUTTONS */}
         <div className="p-3 border-t border-slate-800 space-y-2">
           {user ? (
             <div className="bg-slate-800 border border-slate-700 rounded-xl p-2.5 space-y-2">
@@ -1302,7 +1581,6 @@ function FrameFlowApp() {
       {/* DASHBOARD VIEW */}
       {currentView === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-y-auto bg-slate-950">
-          
           <div className="h-auto md:h-16 border-b border-slate-800 p-3 md:px-8 flex flex-col sm:flex-row items-center justify-between bg-slate-900 sticky top-0 backdrop-blur z-20 gap-2 sm:gap-4">
             <div className="flex items-center gap-2 w-full max-w-lg">
               <div className="relative flex-1">
@@ -1502,7 +1780,6 @@ function FrameFlowApp() {
       {/* REVIEW VIEW */}
       {currentView === 'review' && activeVideo && (
         <div className="flex-1 flex flex-col lg:flex-row bg-slate-950 min-w-0 overflow-y-auto lg:overflow-hidden">
-          
           <div className="flex-1 flex flex-col min-w-0">
             <div className="p-3 lg:px-6 lg:py-3 border-b border-slate-800 bg-slate-900 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 flex-wrap">
@@ -2024,7 +2301,6 @@ function FrameFlowApp() {
               )}
             </div>
           </div>
-
         </div>
       )}
 
@@ -2454,7 +2730,6 @@ function FrameFlowApp() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
