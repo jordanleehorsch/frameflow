@@ -432,7 +432,7 @@ function FrameFlowApp() {
     setInlinePinText('');
   };
 
-  const handlePostInlinePinComment = (e) => {
+ const handlePostInlinePinComment = (e) => {
     e.preventDefault();
     if (!inlinePinText.trim() || !activePin) return;
 
@@ -450,6 +450,39 @@ function FrameFlowApp() {
 
     lastUserActionRef.current = Date.now();
     setComments(prev => [newComment, ...prev]);
+    
+    // Automatically set status to "Changes Requested" & bump video to top of workspace
+    setVideos(prev => moveVideoToTopWithStatus(prev, targetVidId, 'Changes Requested'));
+
+    queueCommentForEmailDigest(newComment, targetVidId);
+    setActivePin(null);
+    setInlinePinText('');
+  };
+
+  const handleAddComment = (e) => {
+    e.preventDefault();
+    if (!commentText.trim()) return;
+
+    const newComment = {
+      id: 'comment-' + Date.now(),
+      videoId: targetVidId,
+      author: authorName || 'Reviewer',
+      text: commentText.trim(),
+      timestamp: currentTime,
+      timeFormatted: formatTime(currentTime),
+      completed: false,
+      createdAt: new Date().toISOString()
+    };
+
+    lastUserActionRef.current = Date.now();
+    setComments(prev => [newComment, ...prev]);
+
+    // Automatically set status to "Changes Requested" & bump video to top of workspace
+    setVideos(prev => moveVideoToTopWithStatus(prev, targetVidId, 'Changes Requested'));
+
+    queueCommentForEmailDigest(newComment, targetVidId);
+    setCommentText('');
+  };
     
     // Bump video timestamp so it moves to top of Dashboard
     setVideos(prev => prev.map(v => v.id === targetVidId ? { ...v, updatedAt: new Date().toISOString() } : v));
