@@ -24,9 +24,9 @@ const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const INITIAL_BRANDS = ['Carlos', 'HomeGrown', 'Modern Market', 'QDOBA', 'Thrive'];
 
 const LATEST_APP_UPDATE = {
-  version: "v6.0",
-  title: "Unconditional Media Playback & Error Diagnostics",
-  description: "Removed strict CORS attribute restrictions on CDN video streams and added native media decoder error diagnostics."
+  version: "v6.1",
+  title: "Pinpoint Interactivity & Dynamic Recents Sorting",
+  description: "Fixed event bubbling on timestamp pins and forced auto-sorting so newly uploaded cuts always appear first."
 };
 
 // 🛡️ REACT ERROR BOUNDARY
@@ -113,7 +113,8 @@ const moveVideoToTopWithStatus = (videoList, targetId, newStatus) => {
   const target = videoList.find(v => v.id === targetId);
   if (!target) return videoList;
   const remaining = videoList.filter(v => v.id !== targetId);
-  return [{ ...target, status: newStatus }, ...remaining];
+  const now = new Date().toISOString();
+  return [{ ...target, status: newStatus, updatedAt: now }, ...remaining];
 };
 
 function FrameFlowApp() {
@@ -406,9 +407,10 @@ function FrameFlowApp() {
     });
   }, [currentTime, drawings, targetVidId]);
 
-  // 📍 PIN & COMMENT HANDLERS
+  // 📍 PIN & COMMENT HANDLERS (FIXED GLITCH)
   const handleCanvasClick = (e) => {
     if (isDrawingMode || activePin) return;
+
     const container = e.currentTarget;
     const rect = container.getBoundingClientRect();
     const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
@@ -419,11 +421,13 @@ function FrameFlowApp() {
       setIsPlaying(false);
     }
 
+    const targetTime = videoRef.current ? videoRef.current.currentTime : currentTime;
+
     setActivePin({
       xPercent,
       yPercent,
-      timestamp: currentTime,
-      timeFormatted: formatTime(currentTime)
+      timestamp: targetTime,
+      timeFormatted: formatTime(targetTime)
     });
     setInlinePinText('');
   };
@@ -446,6 +450,10 @@ function FrameFlowApp() {
 
     lastUserActionRef.current = Date.now();
     setComments(prev => [newComment, ...prev]);
+    
+    // Bump video timestamp so it moves to top of Dashboard
+    setVideos(prev => prev.map(v => v.id === targetVidId ? { ...v, updatedAt: new Date().toISOString() } : v));
+
     queueCommentForEmailDigest(newComment, targetVidId);
     setActivePin(null);
     setInlinePinText('');
@@ -468,6 +476,10 @@ function FrameFlowApp() {
 
     lastUserActionRef.current = Date.now();
     setComments(prev => [newComment, ...prev]);
+
+    // Bump video timestamp so it moves to top of Dashboard
+    setVideos(prev => prev.map(v => v.id === targetVidId ? { ...v, updatedAt: new Date().toISOString() } : v));
+
     queueCommentForEmailDigest(newComment, targetVidId);
     setCommentText('');
   };
@@ -545,6 +557,7 @@ function FrameFlowApp() {
 
     const cleanTitle = newVideoTitle.trim() || uploadedFileName || 'Untitled Video';
     const deterministicId = getDeterministicId(newVideoUrl || cleanTitle);
+    const nowIso = new Date().toISOString();
 
     const newVidObj = {
       id: deterministicId,
@@ -552,7 +565,8 @@ function FrameFlowApp() {
       brand: newVideoBrand || 'Thrive',
       url: newVideoUrl.trim(),
       status: 'In Review',
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
       duration: 30
     };
 
@@ -571,11 +585,14 @@ function FrameFlowApp() {
       return;
     }
 
+    const nowIso = new Date().toISOString();
     lastUserActionRef.current = Date.now();
+    
     setVideos(prev => prev.map(v => v.id === activeVideoId ? {
       ...v,
       url: newVideoUrl.trim(),
-      title: newVideoTitle.trim() || v.title
+      title: newVideoTitle.trim() || v.title,
+      updatedAt: nowIso
     } : v));
 
     resetUploadForm();
@@ -603,6 +620,7 @@ function FrameFlowApp() {
         if (fileUrl) {
           const deterministicId = getDeterministicId(fileName || fileUrl);
           const cleanTitle = sequenceName || fileName || 'Premiere Timeline Cut';
+          const nowIso = new Date().toISOString();
 
           const newVidObj = {
             id: deterministicId,
@@ -610,7 +628,8 @@ function FrameFlowApp() {
             brand: selectedBrand !== 'All' ? selectedBrand : 'Thrive',
             url: fileUrl,
             status: 'In Review',
-            createdAt: new Date().toISOString(),
+            createdAt: nowIso,
+            updatedAt: nowIso,
             duration: 30
           };
 
@@ -1057,13 +1076,16 @@ function FrameFlowApp() {
             .replace(/\.[^/.]+$/, "")
             .replace(/_/g, ' ');
 
+          const fileTimestamp = file.LastChanged || new Date().toISOString();
+
           bunnyVideoMap.set(id, {
             id: id,
             title: meta?.title || cleanTitle || filename,
             brand: meta?.brand || 'Thrive',
             url: meta?.url || publicUrl,
             status: meta?.status || 'In Review',
-            createdAt: meta?.createdAt || file.LastChanged || new Date().toISOString(),
+            createdAt: meta?.createdAt || fileTimestamp,
+            updatedAt: meta?.updatedAt || fileTimestamp,
             duration: meta?.duration || 30
           });
         });
@@ -1171,7 +1193,7 @@ function FrameFlowApp() {
               if (!isDifferent) {
                 isDifferent = prevVideos.some(v => {
                   const cv = cloudVidMap.get(v.id);
-                  return cv && (v.title !== cv.title || v.brand !== cv.brand || v.status !== cv.status || v.url !== cv.url);
+                  return cv && (v.title !== cv.title || v.brand !== cv.brand || v.status !== cv.status || v.url !== cv.url || v.updatedAt !== cv.updatedAt);
                 });
               }
 
@@ -1187,6 +1209,7 @@ function FrameFlowApp() {
                     url: cv.url || existing?.url,
                     status: cv.status || existing?.status || 'In Review',
                     createdAt: cv.createdAt || existing?.createdAt || new Date().toISOString(),
+                    updatedAt: cv.updatedAt || existing?.updatedAt || new Date().toISOString(),
                     duration: cv.duration || existing?.duration || 30
                   });
                 });
@@ -1237,6 +1260,11 @@ function FrameFlowApp() {
       );
       if (found) {
         setActiveVideoId(found.id);
+        
+        // Bump timestamp so it sorts to top of Recents
+        const nowIso = new Date().toISOString();
+        setVideos(prev => prev.map(v => v.id === found.id ? { ...v, updatedAt: nowIso } : v));
+        
         setCurrentView('review');
       }
     }
@@ -1312,7 +1340,8 @@ function FrameFlowApp() {
     if (status === 'Changes Requested') {
       updatedVideos = moveVideoToTopWithStatus(videos, activeVideoId, status);
     } else {
-      updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status } : v);
+      const nowIso = new Date().toISOString();
+      updatedVideos = videos.map(v => v.id === activeVideoId ? { ...v, status, updatedAt: nowIso } : v);
     }
     setVideos(updatedVideos);
   };
@@ -1387,7 +1416,7 @@ function FrameFlowApp() {
     } else if (commentSort === 'newest') {
       return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     } else if (commentSort === 'oldest') {
-      return new Date(a.createdAt || 0) - new Date(a.createdAt || 0);
+      return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
     }
     return 0;
   });
@@ -1398,11 +1427,18 @@ function FrameFlowApp() {
     Math.abs(c.timestamp - currentTime) < 0.25
   );
 
-  const filteredVideos = videos.filter(v => {
-    const matchesBrand = selectedBrand === 'All' || v.brand === selectedBrand;
-    const matchesSearch = v.title.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesBrand && matchesSearch;
-  });
+  // DYNAMIC SORTING: Bumps newest & updated videos directly to the top
+  const filteredVideos = [...videos]
+    .filter(v => {
+      const matchesBrand = selectedBrand === 'All' || v.brand === selectedBrand;
+      const matchesSearch = v.title.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesBrand && matchesSearch;
+    })
+    .sort((a, b) => {
+      const timeA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
@@ -1927,7 +1963,7 @@ function FrameFlowApp() {
                   </div>
                 )}
 
-                {/* 🎬 MAIN VIDEO PLAYER ELEMENT (UNCONDITIONAL PLAYBACK) */}
+                {/* 🎬 MAIN VIDEO PLAYER ELEMENT (FIXED EVENT BUBBLING) */}
                 <video
                   key={activeVideo?.url}
                   ref={videoRef}
@@ -1935,7 +1971,6 @@ function FrameFlowApp() {
                   playsInline
                   preload="auto"
                   className="w-full h-full object-contain cursor-pointer relative z-10"
-                  onClick={togglePlayPlayback}
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
                   onLoadedMetadata={(e) => {
                     if (e.target.duration && !isNaN(e.target.duration)) {
@@ -1950,10 +1985,7 @@ function FrameFlowApp() {
                     setIsVideoProcessing(false);
                     setVideoLoadError(`Failed to decode media stream from ${activeVideo?.url || 'URL'}`);
                   }}
-                  onPlay={() => {
-                    setIsPlaying(true);
-                    setActivePin(null);
-                  }}
+                  onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
                 />
 
